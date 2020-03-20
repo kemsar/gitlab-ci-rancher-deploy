@@ -8,8 +8,6 @@ Both GitLab's built in Docker registry and external Docker registries are suppor
 
 `rancher-gitlab-deploy` will pick as much of its configuration up as possible from environment variables set by the GitLab CI runner.
 
-This tool is not suitable if your services are not already created in Rancher. It will upgrade existing services, but will not create new ones. If you need to create services you should use `rancher-compose` in your CI workflow, but that means storing any secret environment variables in your Git repo.
-
 ## Installation
 
 I recommend you use the pre-built container:
@@ -36,7 +34,7 @@ Three secret variables are required:
 
 Rancher supports two kind of API keys: environment and account. You can use either with this tool, but if your account key has access to more than one environment you'll need to specify the name of the environment with the --environment flag. This is so that the tool can upgrade find the service in the right place. For example, in your `gitlab-ci.yml`:
 
-```
+```yaml
 deploy:
   stage: deploy
   image: cdrx/rancher-gitlab-deploy
@@ -52,7 +50,7 @@ will upgrade the service called `webservice` in the stack called `acme`.
 
 If the names of your services don't match your repos in GitLab 1:1, you can change the service that gets upgraded with the `--stack` and `--service` flags:
 
-```
+```yaml
 deploy:
   stage: deploy
   image: cdrx/rancher-gitlab-deploy
@@ -62,7 +60,7 @@ deploy:
 
 You can change the image (or :tag) used to deploy the upgraded containers with the `--new-image` option:
 
-```
+```yaml
 deploy:
   stage: deploy
   image: cdrx/rancher-gitlab-deploy
@@ -78,7 +76,7 @@ You may use this with the `$CI_BUILD_TAG` environment variable that GitLab sets.
 
 Complete gitlab-ci.yml:
 
-```
+```yaml
 image: docker:latest
 services:
   - docker:dind
@@ -103,7 +101,7 @@ deploy:
 
 A more complex example:
 
-```
+```yaml
 deploy:
   stage: deploy
   image: cdrx/rancher-gitlab-deploy
@@ -172,7 +170,8 @@ Options:
                                   and service, if they are missed
                                   (needs --new-image option)
   --labels                        Will add Rancher labels to the service being
-                                  created by passing a comma separated list.
+                                  created by passing a comma separated list in the format of
+                                  '<label1>=<value>,<label2>=<value>'.
   --label KEY VALUE               Alternative way of adding a Rancher label to the
                                   service.
                                   You can pass this option multiple times to create

@@ -47,26 +47,30 @@ from time import sleep
 @click.option('--sidekicks/--no-sidekicks', default=False,
               help="Upgrade service sidekicks at the same time")
 @click.option('--new-sidekick-image', default=None, multiple=True,
-              help="If specified, replace the sidekick image (and :tag) with this one during the upgrade", type=(str, str))
+              help="If specified, replace the sidekick image (and :tag) with this one during the upgrade",
+              type=(str, str))
 @click.option('--create/--no-create', default=False,
               help="If specified, create Rancher stack and service if they don't exist")
 @click.option('--labels', default=None,
-              help="If specified, add a comma separated list of key=values to add to the service")
+              help="If specified, add a comma separated list of <key>=<value> to add to the service")
 @click.option('--label', default=None, multiple=True,
-              help="If specified, add a Rancher label to the service", type=(str, str))
+              help="If specified as '<label> <value>', add a Rancher label to the service", type=(str, str))
 @click.option('--variables', default=None,
               help="If specified, add a comma separated list of key=values to add to the service")
 @click.option('--variable', default=None, multiple=True,
               help="If specified, add a environment variable to the service", type=(str, str))
 @click.option('--service-links', default=None,
-              help="If specified, add a comma separated list of key=values to add to the service")
+              help="If specified, add a comma separated list of <destination_service>=<link_name> to add to the service")
 @click.option('--service-link', default=None, multiple=True,
-              help="If specified, add a service link to the service", type=(str, str))
+              help="If specified, add a service link to the service as '<destination_service> <link_name>'.", type=(str, str))
 @click.option('--debug/--no-debug', default=False,
               help="Enable HTTP Debugging")
 @click.option('--ssl-verify/--no-ssl-verify', default=True,
               help="Disable certificate checks. Use this to allow connecting to a HTTPS Rancher server using an self-signed certificate")
-def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, new_image, batch_size, batch_interval, start_before_stopping, upgrade_timeout, wait_for_upgrade_to_finish, rollback_on_error, finish_upgrade, sidekicks, new_sidekick_image, create, labels, label, variables, variable, service_links, service_link, debug, ssl_verify):
+def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, new_image, batch_size, batch_interval,
+         start_before_stopping, upgrade_timeout, wait_for_upgrade_to_finish, rollback_on_error, finish_upgrade,
+         sidekicks, new_sidekick_image, create, labels, label, variables, variable, service_links, service_link, debug,
+         ssl_verify):
     """Performs an in service upgrade of the service specified on the command line"""
 
     if debug:
@@ -120,7 +124,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
             value = item[1]
             defined_environment_variables[key] = value
 
-    # 1 -> Find the environment id in Rancher
+    # 1 -> Find the environment id in Rancher (aka "project")
     try:
         r = session.get("%s/projects?limit=1000" % api)
         r.raise_for_status()
@@ -141,11 +145,42 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
     if not environment_id:
         if environment:
-            bail("The '%s' environment doesn't exist in Rancher, or your API credentials don't have access to it" % environment)
+            bail(
+                "The '%s' environment doesn't exist in Rancher, or your API credentials don't have access to it" % environment)
         else:
             bail("No environment in Rancher matches your request")
 
-    # 2 -> Find the stack in the environment
+    # While we're here, let's define service links if provided
+    defined_service_links = []
+    # try:
+    #     r = session.get("%s/projects/%s/services?limit=1000" % (
+    #         api,
+    #         environment_id
+    #     ))
+    #     r.raise_for_status()
+    # except requests.exceptions.HTTPError:
+    #     bail("Unable to fetch a list of stacks in the environment '%s'" % environment_name)
+    # else:
+    #     services = r.json()['data']
+
+    if service_links is not None:
+        service_links_as_array = service_links.split(',')
+
+        for service_link_item in service_links_as_array:
+            name, reference = service_link_item.split('=', 1)
+            service_id = get_service_id_from_link_reference(reference,session,api,environment_id,environment_name)
+
+            if service_id:
+                defined_service_links.append({'name': name, 'serviceId': service_id})
+
+    if service_link:
+        for name, reference in service_link:
+            service_id = get_service_id_from_link_reference(reference,session,api,environment_id,environment_name)
+
+            if service_id:
+                defined_service_links.append({'name': name, 'serviceId': service_id})
+
+    # 2 -> Find the stack (aka "environment") in the environment (aka "project")
 
     try:
         r = session.get("%s/projects/%s/environments?limit=1000" % (
@@ -179,7 +214,8 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
             except requests.exceptions.HTTPError:
                 bail("Unable to create missing stack")
         else:
-            bail("Unable to find a stack called '%s'. Does it exist in the '%s' environment?" % (stack, environment_name))
+            bail("Unable to find a stack called '%s'. Does it exist in the '%s' environment?" % (
+            stack, environment_name))
 
     # 3 -> Find the service in the stack
 
@@ -195,12 +231,13 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     else:
         services = r.json()['data']
 
+    # Loop through all services and find the one that matches the command line argument
     for s in services:
         if s['name'].lower() == service.lower():
             service = s
             break
     else:
-
+        # We didn't find the specified service, so if the 'create' flag is set, let's try to create a new service
         if create:
             new_service = {
                 'name': service.lower(),
@@ -223,44 +260,6 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                 r.raise_for_status()
                 service = r.json()
 
-                defined_service_links = []
-
-                if service_links is not None:
-                    service_links_as_array = service_links.split(',')
-
-                    for service_link_item in service_links_as_array:
-                        name, reference = service_link_item.split('=', 1)
-                        serviceId = None
-
-                        for s in services:
-                            if s['name'].lower() == reference.lower():
-                                serviceId = s['id']
-                                break
-
-                        if serviceId:
-                            defined_service_links.append({'name': name, 'serviceId': serviceId})
-
-                if service_link:
-                    for name, reference in service_link:
-                        serviceId = None
-
-                        for s in services:
-                            if s['name'].lower() == reference.lower():
-                                serviceId = s['id']
-                                break
-
-                        if serviceId:
-                            defined_service_links.append({'name': name, 'serviceId': serviceId})
-
-                if defined_service_links:
-                    msg("Setting service links for service %s in environment %s with image %s..." % (
-                        new_service['name'], environment_name, new_image
-                    ))
-                    r = session.post(service['actions']['setservicelinks'], json={'serviceLinks': defined_service_links})
-                    r.raise_for_status()
-                    service = r.json()
-                    msg("Service links set")
-
                 msg("Creation finished")
                 sys.exit(0)
             except requests.exceptions.HTTPError:
@@ -271,7 +270,8 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     # 4 -> Is the service elligible for upgrade?
 
     if service['state'] == 'upgraded':
-        warn("The current service state is 'upgraded', marking the previous upgrade as finished before starting a new upgrade...")
+        warn(
+            "The current service state is 'upgraded', marking the previous upgrade as finished before starting a new upgrade...")
 
         try:
             r = session.post("%s/projects/%s/services/%s/?action=finishupgrade" % (
@@ -333,7 +333,10 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
         for idx, secondaryLaunchConfigs in enumerate(service['secondaryLaunchConfigs']):
             if secondaryLaunchConfigs['name'] in new_sidekick_image:
-                upgrade['inServiceStrategy']['secondaryLaunchConfigs'][idx]['imageUuid'] = 'docker:%s' % new_sidekick_image[secondaryLaunchConfigs['name']]
+                upgrade['inServiceStrategy']['secondaryLaunchConfigs'][idx]['imageUuid'] = 'docker:%s' % \
+                                                                                           new_sidekick_image[
+                                                                                               secondaryLaunchConfigs[
+                                                                                                   'name']]
 
     # 5 -> Start the upgrade
 
@@ -347,7 +350,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
     # 6 -> Wait for the upgrade to finish
 
-    if not wait_for_upgrade_to_finish:
+    if not wait_for_upgrade_to_finish and not defined_service_links:
         msg("Upgrade started")
     else:
         msg("Upgrade started, waiting for upgrade to complete...")
@@ -374,7 +377,8 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                         sleep(2)
                         attempts += 2
                         if attempts > upgrade_timeout:
-                            bail("A timeout occured while waiting for Rancher to rollback the upgrade to its latest running state")
+                            bail(
+                                "A timeout occured while waiting for Rancher to rollback the upgrade to its latest running state")
                         try:
                             r = session.get("%s/projects/%s/services/%s" % (
                                 api, environment_id, service['id']
@@ -399,7 +403,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
             else:
                 service = r.json()
 
-        if not finish_upgrade:
+        if not finish_upgrade and not defined_service_links:
             msg("Service upgraded")
             sys.exit(0)
         else:
@@ -430,27 +434,118 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
             msg("Upgrade finished")
 
+            if defined_service_links:
+                msg("Setting service links for service %s in environment %s with image %s..." % (
+                    service['name'], environment_name, new_image
+                ))
+                r = session.post(service['actions']['setservicelinks'], json={'serviceLinks': defined_service_links})
+                r.raise_for_status()
+                service = r.json()
+                msg("Service links set")
+
     sys.exit(0)
 
 
+# ======================================================================================================================
+# A function to retrieve and return a service ID based on a service reference in the service link argument
+# ======================================================================================================================
+def get_service_id_from_link_reference(service_link_reference, session, api, environment_id, environment_name):
+
+    # service references are in the form of '<stack>/<service>'
+    stack_name, service_name = service_link_reference.split('/')
+    return get_service_id(stack_name, service_name, session, api, environment_id, environment_name)
+
+
+# ======================================================================================================================
+# A function to retrieve and return a service ID based on a service reference in the service link argument
+# ======================================================================================================================
+def get_service_id(stack_name, service_name, session, api, environment_id, environment_name):
+
+    service_id = None
+    services = None
+    stack_id = get_stack_id(stack_name, session, api, environment_id, environment_name)
+
+    if stack_id:
+        try:
+            r = session.get("%s/projects/%s/environments/%s/services?limit=1000" % (
+                api,
+                environment_id,
+                stack_id
+            ))
+            r.raise_for_status()
+        except requests.exceptions.HTTPError:
+            bail("Unable to fetch a list of services in stack '%s'. Does your API key have the right permissions?"
+                 % stack_name,False)
+            return service_id
+        else:
+            services = r.json()['data']
+
+        # Loop through all services and find the one that matches the command line argument
+        for s in services:
+            if s['name'].lower() == service_name:
+                service_id = s['id']
+                break
+
+    return service_id
+
+
+# ======================================================================================================================
+# A function to retrieve and return a stack ID based on a stack name
+# ======================================================================================================================
+def get_stack_id(stack_name, session, api, environment_id, environment_name):
+
+    stack_id = None
+    stacks = None
+
+    try:
+        r = session.get("%s/projects/%s/environments?limit=1000" % (
+            api,
+            environment_id
+        ))
+        r.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bail("Unable to fetch a list of stacks in the environment '%s'" % environment_name,False)
+        return stack_id
+    else:
+        stacks = r.json()['data']
+
+    for stack in stacks:
+        if stack['name'] == stack_name.lower():
+            stack_id = stack['id']
+            break
+
+    return stack_id
+
+
+# ======================================================================================================================
+# A function to
+# ======================================================================================================================
 def msg(message):
     click.echo(click.style(message, fg='green'))
 
 
+# ======================================================================================================================
+# A function to
+# ======================================================================================================================
 def warn(message):
     click.echo(click.style(message, fg='yellow'))
 
 
+# ======================================================================================================================
+# A function to
+# ======================================================================================================================
 def bail(message, exit=True):
     click.echo(click.style('Error: ' + message, fg='red'))
-    if (exit):
+    if exit:
         sys.exit(1)
 
 
+# ======================================================================================================================
+# A function to turn on debug logging
+# ======================================================================================================================
 def debug_requests_on():
-    '''Switches on logging of the requests module.'''
+    """Switches on logging of the requests module."""
     HTTPConnection.debuglevel = 1
-
     logging.basicConfig()
     logging.getLogger().setLevel(logging.DEBUG)
     requests_log = logging.getLogger("requests.packages.urllib3")
