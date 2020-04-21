@@ -438,9 +438,52 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                 msg("Setting service links for service %s in environment %s with image %s..." % (
                     service['name'], environment_name, new_image
                 ))
+                # Kill service for now
+                r = session.post("%s/projects/%s/services/%s/?action=deactivate" % (
+                    api, environment_id, service['id']
+                ))
+                service = r.json()
+                attempts = 0
+                while service['state'] != "inactive":
+                    sleep(2)
+                    attempts += 2
+                    if attempts > upgrade_timeout:
+                        bail("A timeout occured while waiting for the service to shut down.")
+                    try:
+                        r = session.get("%s/projects/%s/services/%s" % (
+                            api, environment_id, service['id']
+                        ))
+                        r.raise_for_status()
+                    except requests.exceptions.HTTPError:
+                        bail("Unable to request the service status from the Rancher API")
+                    else:
+                        service = r.json()
+
+                # service should be down. Let's add the service links
                 r = session.post(service['actions']['setservicelinks'], json={'serviceLinks': defined_service_links})
                 r.raise_for_status()
                 service = r.json()
+
+                # now bring the service back up
+                r = session.post("%s/projects/%s/services/%s/?action=active" % (
+                    api, environment_id, service['id']
+                ))
+                service = r.json()
+                attempts = 0
+                while service['state'] != "active":
+                    sleep(2)
+                    attempts += 2
+                    if attempts > upgrade_timeout:
+                        bail("A timeout occured while waiting for the service to start.")
+                    try:
+                        r = session.get("%s/projects/%s/services/%s" % (
+                            api, environment_id, service['id']
+                        ))
+                        r.raise_for_status()
+                    except requests.exceptions.HTTPError:
+                        bail("Unable to request the service status from the Rancher API")
+                    else:
+                        service = r.json()
                 msg("Service links set")
 
     sys.exit(0)
