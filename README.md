@@ -177,7 +177,7 @@ Options:
                                   You can pass this option multiple times to create
                                   multiple labels.
   --variables                     Will add environment variables to the service being
-                                  created by passing a comma separated list.
+                                  created by passing a pipe-delimited list.
   --variable KEY VALUE            Alternative way of adding environment variables to the
                                   service.
                                   You can pass this option multiple times to create

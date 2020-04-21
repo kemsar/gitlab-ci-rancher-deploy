@@ -56,7 +56,7 @@ from time import sleep
 @click.option('--label', default=None, multiple=True,
               help="If specified as '<label> <value>', add a Rancher label to the service", type=(str, str))
 @click.option('--variables', default=None,
-              help="If specified, add a comma separated list of key=values to add to the service")
+              help="If specified, add a pipe (|) delimited list of key=value pairs to add to the service")
 @click.option('--variable', default=None, multiple=True,
               help="If specified, add a environment variable to the service", type=(str, str))
 @click.option('--service-links', default=None,
@@ -112,7 +112,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     defined_environment_variables = {}
 
     if variables is not None:
-        variables_as_array = variables.split(',')
+        variables_as_array = variables.split('|')
 
         for variable_item in variables_as_array:
             key, value = variable_item.split('=', 1)
