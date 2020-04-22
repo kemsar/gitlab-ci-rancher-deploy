@@ -261,7 +261,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                 service = r.json()
 
                 msg("Creation finished")
-                sys.exit(0)
+                # sys.exit(0)
             except requests.exceptions.HTTPError:
                 bail("Unable to create missing service")
         else:
@@ -297,8 +297,8 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
             else:
                 service = r.json()
 
-    if service['state'] != 'active':
-        bail("Unable to start upgrade: current service state '%s', but it needs to be 'active'" % service['state'])
+    # if service['state'] != 'active':
+    #     bail("Unable to start upgrade: current service state '%s', but it needs to be 'active'" % service['state'])
 
     msg("Upgrading %s/%s in environment %s..." % (stack['name'], service['name'], environment_name))
 
