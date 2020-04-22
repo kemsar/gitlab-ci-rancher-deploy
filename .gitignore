@@ -90,3 +90,4 @@ ENV/
 
 # IDEA stuff
 .idea
+!/ranchlab/lib/

@@ -6,92 +6,122 @@ import json
 import logging
 import contextlib
 
+
 try:
     from http.client import HTTPConnection  # py3
 except ImportError:
     from httplib import HTTPConnection  # py2
 
 from time import sleep
+from lib import RancherConnection
 
 
 @click.command()
 @click.option('--rancher-url', envvar='RANCHER_URL', required=True,
-              help='The URL for your Rancher server, eg: http://rancher:8000')
+              help='The URL for your Rancher server.')
 @click.option('--rancher-key', envvar='RANCHER_ACCESS_KEY', required=True,
-              help="The environment or account API key")
+              help="The environment or account API Access Key.")
 @click.option('--rancher-secret', envvar='RANCHER_SECRET_KEY', required=True,
-              help="The secret for the access API key")
-@click.option('--environment', default=None,
-              help="The name of the environment to add the host into " + \
-                   "(only needed if you are using an account API key instead of an environment API key)")
-@click.option('--stack', envvar='CI_PROJECT_NAMESPACE', default=None, required=True,
-              help="The name of the stack in Rancher (defaults to the name of the group in GitLab)")
-@click.option('--service', envvar='CI_PROJECT_NAME', default=None, required=True,
-              help="The name of the service in Rancher to upgrade (defaults to the name of the service in GitLab)")
+              help="The secret for the API Access Key.")
+@click.option('--api-version', 'rancher_api_version', default='v2-beta', required=False,
+              help="The API version to use. Rancher versions < 2 have API versions v1 and v2-beta. The default is "
+                   "v2-beta.")
+@click.option('--environment', 'rancher_environment_name', default=None,
+              help="The name of the Rancher environment to operate in. " +
+                   "This is only required if you are using an account API key instead of an environment API key.")
+@click.option('--stack', 'rancher_stack_name', envvar='CI_PROJECT_NAMESPACE', default=None, required=True,
+              help="The name of the target stack in Rancher. Defaults to the name of the GitLab project group as "
+                   "defined in the CI_PROJECT_NAMESPACE environment variable.")
+@click.option('--service', 'rancher_service_name', envvar='CI_PROJECT_NAME', default=None, required=True,
+              help="The name of the service in Rancher to upgrade/create. Defaults to the name of the GitLab project "
+                   "as defined in the CI_PROJECT_NAME environment variable.")
 @click.option('--start-before-stopping/--no-start-before-stopping', default=False,
-              help="Should Rancher start new containers before stopping the old ones?")
+              help="Controls whether or not new containers should be started before the old ones are stopped. Defaults "
+                   "to --no-start-before-stopping.")
 @click.option('--batch-size', default=1,
-              help="Number of containers to upgrade at once")
+              help="Sets the number of containers to upgrade simultaneously. Defaults to 1.")
 @click.option('--batch-interval', default=2,
-              help="Number of seconds to wait between upgrade batches")
-@click.option('--upgrade-timeout', default=5 * 60,
-              help="How long to wait, in seconds, for the upgrade to finish before exiting. To skip the wait, pass the --no-wait-for-upgrade-to-finish option.")
-@click.option('--wait-for-upgrade-to-finish/--no-wait-for-upgrade-to-finish', default=True,
-              help="Wait for Rancher to finish the upgrade before this tool exits")
-@click.option('--rollback-on-error/--no-rollback-on-error', default=False,
-              help="Rollback the upgrade if an error occured. The rollback will be performed only if the option --wait-for-upgrade-to-finish is passed")
-@click.option('--new-image', default=None,
-              help="If specified, replace the image (and :tag) with this one during the upgrade")
-@click.option('--finish-upgrade/--no-finish-upgrade', default=True,
-              help="Mark the upgrade as finished after it completes")
+              help="Sets the number of seconds to wait between batches. Defaults to 2 seconds.")
+@click.option('--timeout', default=5 * 60,
+              help="Sets how many seconds to wait for Rancher to finish processing before assuming something went "
+                   "wrong. Defaults to 300 seconds (5 mins). This setting is ignored if --no-wait is used.")
+@click.option('--wait/--no-wait', 'wait_for_finish', default=True,
+              help="Sets whether or not to wait for Rancher to finish processing the request. Defaults to --wait. If "
+                   "--no-wait is used, --timeout is ignored.")
+@click.option('--rollback/--no-rollback', 'rollback_on_error', default=False,
+              help="Sets whether or not to roll back changes if an error occurs. Defaults to --no-rollback. Only valid "
+                   "in conjunction with --wait.")
+@click.option('--image', 'new_service_image', default=None,
+              help="If specified, replaces the current service's image (and :tag) with the one specified.")
+@click.option('--finish/--no-finish', 'finish_on_success', default=True,
+              help="Sets whether or not to finish an upgrade when it completes. Defaults to --finish.")
 @click.option('--sidekicks/--no-sidekicks', default=False,
-              help="Upgrade service sidekicks at the same time")
+              help="Sets whether or not to upgrade service sidekicks at the same time. Defaults to --no-sidekicks.")
 @click.option('--new-sidekick-image', default=None, multiple=True,
-              help="If specified, replace the sidekick image (and :tag) with this one during the upgrade",
+              help="If specified, replaces the existing sidekick image (and :tag) with the specified one. This can be "
+                   "defined more than once to upgrade multiple sidekicks. "
+                   "Example: '--new-sidekick-image <sidekick-name> <new-image>'",
               type=(str, str))
-@click.option('--create/--no-create', default=False,
-              help="If specified, create Rancher stack and service if they don't exist")
+@click.option('--create-stack/--no-create-stack', default=False,
+              help="Sets whether or not to create the targeted Rancher stack if it doesn't exist. Defaults "
+                   "to --no-create-stack.")
+@click.option('--create-service/--no-create-service', default=False,
+              help="Sets whether or not to create the targeted Rancher service if it doesn't exist. Defaults "
+                   "to --no-create-service.")
 @click.option('--labels', default=None,
-              help="If specified, add a comma separated list of <key>=<value> to add to the service")
+              help="If specified, labels will be added to the service. Labels to be added should be provided as a "
+                   "comma-delimited list of <label-name>=<label-value> pairs.")
 @click.option('--label', default=None, multiple=True,
-              help="If specified as '<label> <value>', add a Rancher label to the service", type=(str, str))
+              help="Another way to add labels to a service. This one can be defined multiple times. "
+                   "Example: '--label label1 value1 --label label2 value2'", type=(str, str))
 @click.option('--variables', default=None,
-              help="If specified, add a pipe (|) delimited list of key=value pairs to add to the service")
+              help="If specified, adds the passed list of environment variables to the service. The list of variables "
+                   "should be a pipe-delimited (|) list of <key>=<value> pairs. "
+                   "Example: '--variables var1=val1|var2=val2|var3=val3'.")
 @click.option('--variable', default=None, multiple=True,
-              help="If specified, add a environment variable to the service", type=(str, str))
+              help="Another way to add environment variables to a service. See --label for syntax.", type=(str, str))
 @click.option('--service-links', default=None,
-              help="If specified, add a comma separated list of <destination_service>=<link_name> to add to the service")
+              help="If specified, adds the provided list of service links to the service. See --labels for syntax. "
+                   "Example: '--service-links <local-name1>=<target-name1>,<local-name2>=<target-name2>'. Target "
+                   "service name should be in the format of '<stack>/<service>'.")
 @click.option('--service-link', default=None, multiple=True,
-              help="If specified, add a service link to the service as '<destination_service> <link_name>'.", type=(str, str))
+              help="Another way to add service links to a service. See --label for syntax.",
+              type=(str, str))
 @click.option('--debug/--no-debug', default=False,
-              help="Enable HTTP Debugging")
+              help="Sets whether or not HTTP debugging is enabled. Defaults to --no-debug.")
 @click.option('--ssl-verify/--no-ssl-verify', default=True,
-              help="Disable certificate checks. Use this to allow connecting to a HTTPS Rancher server using an self-signed certificate")
-def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, new_image, batch_size, batch_interval,
-         start_before_stopping, upgrade_timeout, wait_for_upgrade_to_finish, rollback_on_error, finish_upgrade,
-         sidekicks, new_sidekick_image, create, labels, label, variables, variable, service_links, service_link, debug,
-         ssl_verify):
-    """Performs an in service upgrade of the service specified on the command line"""
+              help="Sets whether or not to perform certificate checks. Defaults to --ssl-verify. Use this to allow "
+                   "connecting to a HTTPS Rancher server using an self-signed certificate")
+def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_environment_name, rancher_stack_name,
+         rancher_service_name, new_service_image, batch_size, batch_interval,
+         start_before_stopping, timeout, wait_for_finish, rollback_on_error, finish_on_success,
+         sidekicks, new_sidekick_image, create_stack, create_service, labels, label, variables, variable,
+         service_links, service_link, debug, ssl_verify):
+    """
+    Performs an in service upgrade of the service specified on the command line
+    """
+
+    rancher = RancherConnection()
 
     if debug:
         debug_requests_on()
 
     # split url to protocol and host
     if "://" not in rancher_url:
-        bail("The Rancher URL doesn't look right")
+        bail("The Rancher URL doesn't look right. Please verify that it's a valid URL (i.e. https://my.rancher.com).")
 
     proto, host = rancher_url.split("://")
-    api = "%s://%s/v1" % (proto, host)
-    stack = stack.replace('.', '-')
-    service = service.replace('.', '-')
+    rancher.api_endpoint = api = "%s://%s/%s" % (proto, host, rancher_api_version)
+    rancher.stack_name = rancher_stack_name = rancher_stack_name.replace('.', '-')
+    rancher.service_name = rancher_service_name = rancher_service_name.replace('.', '-')
 
-    session = requests.Session()
+    # session = requests.Session()
 
     # Set verify based on --ssl-verify/--no-ssl-verify option
-    session.verify = ssl_verify
+    rancher.session.verify = ssl_verify
 
     # 0 -> Authenticate all future requests
-    session.auth = (rancher_key, rancher_secret)
+    rancher.session.auth = (rancher_key, rancher_secret)
 
     # Check for labels and environment variables to set
     defined_labels = {}
@@ -134,19 +164,19 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
         environments = r.json()['data']
 
     environment_id = None
-    if environment is None:
+    if rancher_environment_name is None:
         environment_id = environments[0]['id']
         environment_name = environments[0]['name']
     else:
         for e in environments:
-            if e['id'].lower() == environment.lower() or e['name'].lower() == environment.lower():
+            if e['id'].lower() == rancher_environment_name.lower() or e['name'].lower() == rancher_environment_name.lower():
                 environment_id = e['id']
                 environment_name = e['name']
 
     if not environment_id:
-        if environment:
+        if rancher_environment_name:
             bail(
-                "The '%s' environment doesn't exist in Rancher, or your API credentials don't have access to it" % environment)
+                "The '%s' environment doesn't exist in Rancher, or your API credentials don't have access to it" % rancher_environment_name)
         else:
             bail("No environment in Rancher matches your request")
 
@@ -168,14 +198,14 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
         for service_link_item in service_links_as_array:
             name, reference = service_link_item.split('=', 1)
-            service_id = get_service_id_from_link_reference(reference,session,api,environment_id,environment_name)
+            service_id = get_service_id_from_link_reference(reference, session, api, environment_id, environment_name)
 
             if service_id:
                 defined_service_links.append({'name': name, 'serviceId': service_id})
 
     if service_link:
         for name, reference in service_link:
-            service_id = get_service_id_from_link_reference(reference,session,api,environment_id,environment_name)
+            service_id = get_service_id_from_link_reference(reference, session, api, environment_id, environment_name)
 
             if service_id:
                 defined_service_links.append({'name': name, 'serviceId': service_id})
@@ -195,13 +225,13 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
     for s in stacks:
 
-        if s['name'].lower() == stack.lower():
-            stack = s
+        if s['name'].lower() == rancher_stack_name.lower():
+            rancher_stack_name = s
             break
     else:
         if create:
             new_stack = {
-                'name': stack.lower()
+                'name': rancher_stack_name.lower()
             }
             try:
                 msg("Creating stack %s in environment %s..." % (new_stack['name'], environment_name))
@@ -210,12 +240,12 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                     environment_id
                 ), json=new_stack)
                 r.raise_for_status()
-                stack = r.json()
+                rancher_stack_name = r.json()
             except requests.exceptions.HTTPError:
                 bail("Unable to create missing stack")
         else:
             bail("Unable to find a stack called '%s'. Does it exist in the '%s' environment?" % (
-            stack, environment_name))
+                rancher_stack_name, environment_name))
 
     # 3 -> Find the service in the stack
 
@@ -223,7 +253,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
         r = session.get("%s/projects/%s/environments/%s/services?limit=1000" % (
             api,
             environment_id,
-            stack['id']
+            rancher_stack_name['id']
         ))
         r.raise_for_status()
     except requests.exceptions.HTTPError:
@@ -233,15 +263,15 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
     # Loop through all services and find the one that matches the command line argument
     for s in services:
-        if s['name'].lower() == service.lower():
-            service = s
+        if s['name'].lower() == rancher_service_name.lower():
+            rancher_service_name = s
             break
     else:
         # We didn't find the specified service, so if the 'create' flag is set, let's try to create a new service
         if create:
             new_service = {
-                'name': service.lower(),
-                'stackId': stack['id'],
+                'name': rancher_service_name.lower(),
+                'stackId': rancher_stack_name['id'],
                 'startOnCreate': True,
                 'launchConfig': {
                     'imageUuid': ("docker:%s" % new_image),
@@ -258,49 +288,49 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                     environment_id
                 ), json=new_service)
                 r.raise_for_status()
-                service = r.json()
+                rancher_service_name = r.json()
 
                 msg("Creation finished")
                 # sys.exit(0)
             except requests.exceptions.HTTPError:
                 bail("Unable to create missing service")
         else:
-            bail("Unable to find a service called '%s', does it exist in Rancher?" % service)
+            bail("Unable to find a service called '%s', does it exist in Rancher?" % rancher_service_name)
 
     # 4 -> Is the service elligible for upgrade?
 
-    if service['state'] == 'upgraded':
+    if rancher_service_name['state'] == 'upgraded':
         warn(
             "The current service state is 'upgraded', marking the previous upgrade as finished before starting a new upgrade...")
 
         try:
             r = session.post("%s/projects/%s/services/%s/?action=finishupgrade" % (
-                api, environment_id, service['id']
+                api, environment_id, rancher_service_name['id']
             ))
             r.raise_for_status()
         except requests.exceptions.HTTPError:
             bail("Unable to finish the previous upgrade in Rancher")
 
         attempts = 0
-        while service['state'] != "active":
+        while rancher_service_name['state'] != "active":
             sleep(2)
             attempts += 2
             if attempts > upgrade_timeout:
                 bail("A timeout occured while waiting for Rancher to finish the previous upgrade")
             try:
                 r = session.get("%s/projects/%s/services/%s" % (
-                    api, environment_id, service['id']
+                    api, environment_id, rancher_service_name['id']
                 ))
                 r.raise_for_status()
             except requests.exceptions.HTTPError:
                 bail("Unable to request the service status from the Rancher API")
             else:
-                service = r.json()
+                rancher_service_name = r.json()
 
     # if service['state'] != 'active':
     #     bail("Unable to start upgrade: current service state '%s', but it needs to be 'active'" % service['state'])
 
-    msg("Upgrading %s/%s in environment %s..." % (stack['name'], service['name'], environment_name))
+    msg("Upgrading %s/%s in environment %s..." % (rancher_stack_name['name'], rancher_service_name['name'], environment_name))
 
     upgrade = {'inServiceStrategy': {
         'batchSize': batch_size,
@@ -311,7 +341,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
         'secondaryLaunchConfigs': []
     }}
     # copy over the existing config
-    upgrade['inServiceStrategy']['launchConfig'] = service['launchConfig']
+    upgrade['inServiceStrategy']['launchConfig'] = rancher_service_name['launchConfig']
 
     if defined_labels:
         upgrade['inServiceStrategy']['launchConfig']['labels'].update(defined_labels)
@@ -322,7 +352,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     # new_sidekick_image parameter needs secondaryLaunchConfigs loaded
     if sidekicks or new_sidekick_image:
         # copy over existing sidekicks config
-        upgrade['inServiceStrategy']['secondaryLaunchConfigs'] = service['secondaryLaunchConfigs']
+        upgrade['inServiceStrategy']['secondaryLaunchConfigs'] = rancher_service_name['secondaryLaunchConfigs']
 
     if new_image:
         # place new image into config
@@ -331,7 +361,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     if new_sidekick_image:
         new_sidekick_image = dict(new_sidekick_image)
 
-        for idx, secondaryLaunchConfigs in enumerate(service['secondaryLaunchConfigs']):
+        for idx, secondaryLaunchConfigs in enumerate(rancher_service_name['secondaryLaunchConfigs']):
             if secondaryLaunchConfigs['name'] in new_sidekick_image:
                 upgrade['inServiceStrategy']['secondaryLaunchConfigs'][idx]['imageUuid'] = 'docker:%s' % \
                                                                                            new_sidekick_image[
@@ -339,10 +369,10 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                                                                                                    'name']]
 
     # 5 -> Start the upgrade
-
+    ##### NEW FUNCTION HERE <-----------------------
     try:
         r = session.post("%s/projects/%s/services/%s/?action=upgrade" % (
-            api, environment_id, service['id']
+            api, environment_id, rancher_service_name['id']
         ), json=upgrade)
         r.raise_for_status()
     except requests.exceptions.HTTPError:
@@ -355,7 +385,7 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
     else:
         msg("Upgrade started, waiting for upgrade to complete...")
         attempts = 0
-        while service['state'] != "upgraded":
+        while rancher_service_name['state'] != "upgraded":
             sleep(2)
             attempts += 2
             if attempts > upgrade_timeout:
@@ -366,14 +396,14 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
 
                     try:
                         r = session.post("%s/projects/%s/services/%s/?action=rollback" % (
-                            api, environment_id, service['id']
+                            api, environment_id, rancher_service_name['id']
                         ))
                         r.raise_for_status()
                     except requests.exceptions.HTTPError:
                         bail("Unable to request a rollback on Rancher")
 
                     attempts = 0
-                    while service['state'] != "active":
+                    while rancher_service_name['state'] != "active":
                         sleep(2)
                         attempts += 2
                         if attempts > upgrade_timeout:
@@ -381,13 +411,13 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                                 "A timeout occured while waiting for Rancher to rollback the upgrade to its latest running state")
                         try:
                             r = session.get("%s/projects/%s/services/%s" % (
-                                api, environment_id, service['id']
+                                api, environment_id, rancher_service_name['id']
                             ))
                             r.raise_for_status()
                         except requests.exceptions.HTTPError:
                             bail("Unable to request the service status from the Rancher API")
                         else:
-                            service = r.json()
+                            rancher_service_name = r.json()
 
                     warn("Service sucessfully rolled back")
                     sys.exit(1)
@@ -395,13 +425,13 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
                     bail(message)
             try:
                 r = session.get("%s/projects/%s/services/%s" % (
-                    api, environment_id, service['id']
+                    api, environment_id, rancher_service_name['id']
                 ))
                 r.raise_for_status()
             except requests.exceptions.HTTPError:
                 bail("Unable to fetch the service status from the Rancher API")
             else:
-                service = r.json()
+                rancher_service_name = r.json()
 
         if not finish_upgrade and not defined_service_links:
             msg("Service upgraded")
@@ -410,90 +440,96 @@ def main(rancher_url, rancher_key, rancher_secret, environment, stack, service, 
             msg("Finishing upgrade...")
             try:
                 r = session.post("%s/projects/%s/services/%s/?action=finishupgrade" % (
-                    api, environment_id, service['id']
+                    api, environment_id, rancher_service_name['id']
                 ))
                 r.raise_for_status()
             except requests.exceptions.HTTPError:
                 bail("Unable to finish the upgrade in Rancher")
 
             attempts = 0
-            while service['state'] != "active":
+            while rancher_service_name['state'] != "active":
                 sleep(2)
                 attempts += 2
                 if attempts > upgrade_timeout:
                     bail("A timeout occured while waiting for Rancher to finish the previous upgrade")
                 try:
                     r = session.get("%s/projects/%s/services/%s" % (
-                        api, environment_id, service['id']
+                        api, environment_id, rancher_service_name['id']
                     ))
                     r.raise_for_status()
                 except requests.exceptions.HTTPError:
                     bail("Unable to request the service status from the Rancher API")
                 else:
-                    service = r.json()
+                    rancher_service_name = r.json()
 
             msg("Upgrade finished")
 
             if defined_service_links:
-                msg("Setting service links for service %s in environment %s with image %s..." % (
-                    service['name'], environment_name, new_image
-                ))
-                # Kill service for now
-                r = session.post("%s/projects/%s/services/%s/?action=deactivate" % (
-                    api, environment_id, service['id']
-                ))
-                service = r.json()
-                attempts = 0
-                while service['state'] != "inactive":
-                    sleep(2)
-                    attempts += 2
-                    if attempts > upgrade_timeout:
-                        bail("A timeout occured while waiting for the service to shut down.")
-                    try:
-                        r = session.get("%s/projects/%s/services/%s" % (
-                            api, environment_id, service['id']
-                        ))
-                        r.raise_for_status()
-                    except requests.exceptions.HTTPError:
-                        bail("Unable to request the service status from the Rancher API")
-                    else:
-                        service = r.json()
-
-                # service should be down. Let's add the service links
-                r = session.post(service['actions']['setservicelinks'], json={'serviceLinks': defined_service_links})
-                r.raise_for_status()
-                service = r.json()
-
-                # now bring the service back up
-                r = session.post("%s/projects/%s/services/%s/?action=active" % (
-                    api, environment_id, service['id']
-                ))
-                service = r.json()
-                attempts = 0
-                while service['state'] != "active":
-                    sleep(2)
-                    attempts += 2
-                    if attempts > upgrade_timeout:
-                        bail("A timeout occured while waiting for the service to start.")
-                    try:
-                        r = session.get("%s/projects/%s/services/%s" % (
-                            api, environment_id, service['id']
-                        ))
-                        r.raise_for_status()
-                    except requests.exceptions.HTTPError:
-                        bail("Unable to request the service status from the Rancher API")
-                    else:
-                        service = r.json()
-                msg("Service links set")
+                set_service_links(defined_service_links)
 
     sys.exit(0)
+
+
+# ======================================================================================================================
+# A function to set service links on a service
+# ======================================================================================================================
+def set_service_links(new_service_links, session, api, environment_id, service, timeout):
+    msg("Setting service links for service %s in environment %s with image %s..." % (
+        service['name'], environment_name, new_image
+    ))
+    # Kill service for now
+    r = session.post("%s/projects/%s/services/%s/?action=deactivate" % (
+        api, environment_id, service['id']
+    ))
+    service = r.json()
+    attempts = 0
+    while service['state'] != "inactive":
+        sleep(2)
+        attempts += 2
+        if attempts > upgrade_timeout:
+            bail("A timeout occured while waiting for the service to shut down.")
+        try:
+            r = session.get("%s/projects/%s/services/%s" % (
+                api, environment_id, service['id']
+            ))
+            r.raise_for_status()
+        except requests.exceptions.HTTPError:
+            bail("Unable to request the service status from the Rancher API")
+        else:
+            service = r.json()
+
+    # service should be down. Let's add the service links
+    r = session.post(service['actions']['setservicelinks'], json={'serviceLinks': defined_service_links})
+    r.raise_for_status()
+    service = r.json()
+
+    # now bring the service back up
+    r = session.post("%s/projects/%s/services/%s/?action=active" % (
+        api, environment_id, service['id']
+    ))
+    service = r.json()
+    attempts = 0
+    while service['state'] != "active":
+        sleep(2)
+        attempts += 2
+        if attempts > upgrade_timeout:
+            bail("A timeout occured while waiting for the service to start.")
+        try:
+            r = session.get("%s/projects/%s/services/%s" % (
+                api, environment_id, service['id']
+            ))
+            r.raise_for_status()
+        except requests.exceptions.HTTPError:
+            bail("Unable to request the service status from the Rancher API")
+        else:
+            service = r.json()
+    msg("Service links set")
 
 
 # ======================================================================================================================
 # A function to retrieve and return a service ID based on a service reference in the service link argument
 # ======================================================================================================================
 def get_service_id_from_link_reference(service_link_reference, session, api, environment_id, environment_name):
-
     # service references are in the form of '<stack>/<service>'
     stack_name, service_name = service_link_reference.split('/')
     return get_service_id(stack_name, service_name, session, api, environment_id, environment_name)
@@ -503,7 +539,6 @@ def get_service_id_from_link_reference(service_link_reference, session, api, env
 # A function to retrieve and return a service ID based on a service reference in the service link argument
 # ======================================================================================================================
 def get_service_id(stack_name, service_name, session, api, environment_id, environment_name):
-
     service_id = None
     services = None
     stack_id = get_stack_id(stack_name, session, api, environment_id, environment_name)
@@ -518,7 +553,7 @@ def get_service_id(stack_name, service_name, session, api, environment_id, envir
             r.raise_for_status()
         except requests.exceptions.HTTPError:
             bail("Unable to fetch a list of services in stack '%s'. Does your API key have the right permissions?"
-                 % stack_name,False)
+                 % stack_name, False)
             return service_id
         else:
             services = r.json()['data']
@@ -536,7 +571,6 @@ def get_service_id(stack_name, service_name, session, api, environment_id, envir
 # A function to retrieve and return a stack ID based on a stack name
 # ======================================================================================================================
 def get_stack_id(stack_name, session, api, environment_id, environment_name):
-
     stack_id = None
     stacks = None
 
@@ -547,7 +581,7 @@ def get_stack_id(stack_name, session, api, environment_id, environment_name):
         ))
         r.raise_for_status()
     except requests.exceptions.HTTPError:
-        bail("Unable to fetch a list of stacks in the environment '%s'" % environment_name,False)
+        bail("Unable to fetch a list of stacks in the environment '%s'" % environment_name, False)
         return stack_id
     else:
         stacks = r.json()['data']
