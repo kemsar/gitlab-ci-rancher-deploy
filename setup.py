@@ -11,9 +11,16 @@ setup(name='ranchlab',
       install_requires=[
           'click',
           'requests',
-          'colorama'
+          'colorama',
+          'sakstig'
+      ],
+      tests_require=[
+          'pytest',
+          'cli_test_helpers'
       ],
       entry_points={
-          'console_scripts': ['ranchlab=ranchlab.cli:main'],
+          'console_scripts': [
+              'ranchlab = ranchlab.cli:main'],
+          'scripts': ['ranchlab']
       }
       )
