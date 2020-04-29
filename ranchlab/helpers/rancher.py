@@ -205,8 +205,7 @@ class RancherConnection:
         if response is not None:
             self.__service_id = response
             self.__set_service_links()
-            self.activate_service()
-            return self.wait_for_state('active')
+            return self.activate_service() and self.wait_for_state('active')
         else:
             return False
 
@@ -285,12 +284,14 @@ class RancherConnection:
 
     def activate_service(self, service_id=None):
         service_id = self.__get_actionable_service_id(service_id)
+        self.wait_for_state('inactive', service_id)
         response = self.__managed_session(
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=activate',
             "Error while activating service id '%s'" % service_id,
             '$.*[@.id is "%s"]' % service_id
         )
+        return response is not None
 
     def deactivate_service(self, service_id=None):
         service_id = self.__get_actionable_service_id(service_id)
