@@ -20,7 +20,6 @@ setup(name='ranchlab',
       ],
       entry_points={
           'console_scripts': [
-              'ranchlab = ranchlab.cli:main'],
-          'scripts': ['ranchlab']
+              'ranchlab = ranchlab.cli:main']
       }
       )

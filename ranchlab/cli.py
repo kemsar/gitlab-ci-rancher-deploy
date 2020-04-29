@@ -106,9 +106,6 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
     log = Logger(log_level, 'Main')
     log.trace('Log level set to ' + log.level.name)
 
-    if log.level >= LogLevel.DEBUG:
-        log.trace('Turning on debug mode for HTTP requests')
-
     if debug_http:
         debug_requests_on()
 
@@ -120,7 +117,7 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
     proto, host = rancher_url.split("://")
 
     rancher = RancherConnection(
-        "%s://%s/" % (proto, host),
+        "%s://%s" % (proto, host),
         rancher_key,
         rancher_secret,
         rancher_project_name,
@@ -133,12 +130,12 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
     )
 
     # Check for labels and environment variables to set
-    rancher.add_labels(labels)
-    rancher.add_labels(label)
-    rancher.add_variables(variables)
-    rancher.add_variables(variable)
-    rancher.add_service_links(service_links)
-    rancher.add_service_links(service_link)
+    rancher.set_labels(labels)
+    rancher.set_labels(label)
+    rancher.set_variables(variables)
+    rancher.set_variables(variable)
+    rancher.set_service_links(service_links)
+    rancher.set_service_links(service_link)
 
     # 1 -> Find the environment id in Rancher (aka "project")
 
@@ -148,41 +145,44 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
     if not rancher.stack_exists():
         if create_stack:
             if rancher.create_stack():
-                log.trace('Successfully created stack')
+                log.info('Successfully created stack')
             else:
                 log.fatal("Creating stack failed.")
         else:
             log.fatal("Unable to find a stack called '%s'. Does it exist in the '%s' environment?" % (
-                rancher_stack_name, rancher_project_name))
+                rancher.get_stack_name(), rancher.get_project_name()))
 
     # 3 -> Find the service in the stack
-
     if not rancher.service_exists():
         # We didn't find the specified service, so if the 'create' flag is set, let's try to create a new service
         if create_service:
-            rancher.create_service(new_service_image)
+            if not rancher.create_service(new_service_image):
+                log.fatal("Failed to create a service called '%s'." % rancher.get_service_name())
+            log.info("Service was successfully created. Thank you and have a nice day!")
+            exit(0)
         else:
-            log.fatal("Unable to find a service called '%s', does it exist in Rancher?" % rancher_service_name)
+            log.fatal("Unable to find a service called '%s', does it exist in Rancher?" % rancher.get_service_name())
 
-    # 4 -> Is the service elligible for upgrade?
-
+    # 4 -> Is the service eligible for upgrade?
     if rancher.get_service_state() == 'upgraded':
         log.warn(
-            "The current service state is 'upgraded', marking the previous upgrade as finished before starting a new "
-            "upgrade...")
+            "The current service state is 'upgraded'. Finishing the previous upgrade before starting a new "
+            "one...")
         rancher.finish_upgrade()
 
-    log.info("Upgrading %s/%s in environment %s..." % (rancher_stack_name, rancher_service_name, rancher_project_name))
+    log.info("Upgrading %s/%s in environment %s..."
+             % (rancher.get_stack_name(), rancher.get_service_name(), rancher.get_project_name()))
 
     upgrade = {'inServiceStrategy': {
         'batchSize': batch_size,
-        'intervalMillis': batch_interval * 1000,  # rancher expects miliseconds
+        'intervalMillis': batch_interval * 1000,  # rancher expects milliseconds
         'startFirst': start_before_stopping,
         'launchConfig': {
         },
         'secondaryLaunchConfigs': []
     }}
-    # copy over the existing config
+
+    # copy over the current launchConfig
     upgrade['inServiceStrategy']['launchConfig'] = rancher.get_launch_config()
 
     if rancher.get_labels():
@@ -251,7 +251,7 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
             # if rancher.get_service_links():
             #     set_service_links(defined_service_links)
 
-    log.info("Processing complete. Exiting.")
+    log.info("Processing complete. Have a nice day!")
     sys.exit(0)
 
 

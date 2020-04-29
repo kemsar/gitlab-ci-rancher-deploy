@@ -21,8 +21,8 @@ class RancherTests(unittest.TestCase):
             logger.level)
         labels_str = 'label1=value1,label2=value2'
         labels_tup = [('label3', 'value3'), ('label4', 'This is my label'), ('label5', '"this is a test";')]
-        rancher.add_labels(labels_str)
-        rancher.add_labels(labels_tup)
+        rancher.set_labels(labels_str)
+        rancher.set_labels(labels_tup)
         self.assertEqual(True, rancher.get_labels() is not None, "There should be labels defined on the Rancher object.")
         self.assertEqual(5, len(rancher.get_labels()), "There should be 2 labels defined on the Rancher object.")
         self.assertEqual('value1', rancher.get_labels()['label1'], "The first label should have value of value1")
@@ -42,7 +42,7 @@ class RancherTests(unittest.TestCase):
             'v2-beta',
             logger.level)
         variables_str = 'var1=val1|var2=val2 val3|var3="this is a test";'
-        rancher.add_variables(variables_str)
+        rancher.set_variables(variables_str)
         self.assertEqual(True, rancher.get_variables() is not None, 'There should be some variables')
         self.assertEqual(rancher.get_variables()['var1'], 'val1', 'variable 1 should have value of val1')
         self.assertEqual(rancher.get_variables()['var2'], 'val2 val3', "Variable 2 doesn't have the correct value.")
@@ -62,7 +62,7 @@ class RancherTests(unittest.TestCase):
             'v2-beta',
             logger.level)
         variables_tup = [('var4', 'val4'), ('var5', 'val5 val6'), ('var6', '"this is a test";')]
-        rancher.add_variables(variables_tup)
+        rancher.set_variables(variables_tup)
         self.assertEqual(True, rancher.get_variables() is not None, 'There should be some variables')
         self.assertEqual(rancher.get_variables()['var4'], 'val4', 'variable 4 should have value of val4')
         self.assertEqual(rancher.get_variables()['var5'], 'val5 val6', "Variable 5 doesn't have the correct value.")

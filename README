@@ -79,6 +79,8 @@ strategy can be overridden with various flags. Review the [Help](#help) contents
 
 ## Usage
 
+For usage details, refer to the [--help output](HELP).
+
 ### GitLab CI Example
 
 Complete `.gitlab-ci.yml`:
@@ -114,91 +116,8 @@ deploy:
     - upgrade --environment production --stack acme --service web --new-image alpine:3.4 --no-finish-upgrade
 ```
 
-## Help
-
-```
-$ rancher-gitlab-deploy --help
-
-Usage: rancher-gitlab-deploy [OPTIONS]
-
-  Performs an in service upgrade of the service specified on the command
-  line
-
-Options:
-  --rancher-url TEXT              The URL for your Rancher server, eg:
-                                  http://rancher:8000  [required]
-  --rancher-key TEXT              The environment or account API key
-                                  [required]
-  --rancher-secret TEXT           The secret for the access API key
-                                  [required]
-  --environment TEXT              The name of the environment to add the host
-                                  into (only needed if you are using an
-                                  account API key instead of an environment
-                                  API key)
-  --stack TEXT                    The name of the stack in Rancher (defaults
-                                  to the name of the group in GitLab)
-                                  [required]
-  --sidekicks/--no-sidekicks      Upgrade service sidekicks at the same time?
-                                  Defaults to not upgrading sidekicks
-  --new-sidekick-image NAME IMAGE If specified, replace the named sidekick image
-                                  (and :tag) with this one during the upgrade.
-                                  This flag can be used more than once.
-  --service TEXT                  The name of the service in Rancher to
-                                  upgrade (defaults to the name of the service
-                                  in GitLab)  [required]
-  --start-before-stopping / --no-start-before-stopping
-                                  Should Rancher start new containers before
-                                  stopping the old ones?
-  --batch-size INTEGER            Number of containers to upgrade at once
-  --batch-interval INTEGER        Number of seconds to wait between upgrade
-                                  batches
-  --upgrade-timeout INTEGER       How long to wait, in seconds, for the
-                                  upgrade to finish before exiting. To skip
-                                  the wait, pass the --no-wait-for-upgrade-to-
-                                  finish option.
-  --wait-for-upgrade-to-finish / --no-wait-for-upgrade-to-finish
-                                  Wait for Rancher to finish the upgrade
-                                  before this tool exits
-  --rollback-on-error/--no-rollback-on-error
-                                  Rollback the upgrade if an error occured.
-                                  The rollback will be performed only
-                                  if the option --wait-for-upgrade-to-finish is passed
-  --new-image TEXT                If specified, replace the image (and :tag)
-                                  with this one during the upgrade
-  --finish-upgrade / --no-finish-upgrade
-                                  Mark the upgrade as finished after it
-                                  completes
-  --ssl-verify / --no-ssl-verify  Whether we should skip certificate checks
-                                  or not when connecting to the Rancher API.
-                                  Default behaviour is to check cert validity.
-  --create / --no-create          Will create the Rancher stack
-                                  and service, if they are missed
-                                  (needs --new-image option)
-  --labels                        Will add Rancher labels to the service being
-                                  created by passing a comma separated list in the format of
-                                  '<label1>=<value>,<label2>=<value>'.
-  --label KEY VALUE               Alternative way of adding a Rancher label to the
-                                  service.
-                                  You can pass this option multiple times to create
-                                  multiple labels.
-  --variables                     Will add environment variables to the service being
-                                  created by passing a pipe-delimited list.
-  --variable KEY VALUE            Alternative way of adding environment variables to the
-                                  service.
-                                  You can pass this option multiple times to create
-                                  multiple environment variables.
-  --service-links                 Will set service links to the service being
-                                  created by passing a comma separated list.
-  --service-link KEY VALUE        Alternative way of setting service links to the
-                                  service.
-                                  You can pass this option multiple times to set
-                                  multiple service links.
-  --help                          Show this message and exit.
-
-```
-
 ## History
 See the [Changelog](CHANGELOG).
 
 ## License
-This project is licensed under the terms of the [MIT license](./LICENSE).
+This project is licensed under the terms of the [MIT license](LICENSE).

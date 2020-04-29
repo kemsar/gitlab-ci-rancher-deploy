@@ -45,14 +45,23 @@ class RancherConnection:
         self.__session.auth = (api_key, api_secret)
         self.__labels = {}
         self.__variables = {}
-        self.__service_links = {}
+        self.__service_links = {'serviceLinks': []}
         self.__api_endpoint = self.__url + '/' + self.__api_version
         self.__project_id = self.__get_project_id()
         self.__key = None
         self.__secret = None
         self.__timeout = operation_timeout
 
-    def add_labels(self, labels_in):
+    def get_project_name(self):
+        return self.__project_name
+
+    def get_stack_name(self):
+        return self.__stack_name
+
+    def get_service_name(self):
+        return self.__service_name
+
+    def set_labels(self, labels_in):
         """
         Process the labels arguments
         :param labels_in: A string of comma-delimited key=value pairs
@@ -79,7 +88,7 @@ class RancherConnection:
     def get_labels(self):
         return self.__labels
 
-    def add_variables(self, vars_in):
+    def set_variables(self, vars_in):
         if vars_in is not None and isinstance(vars_in, str):
             self.__logger.debug("Processing a string of variables")
             self.__logger.trace(vars_in)
@@ -99,7 +108,7 @@ class RancherConnection:
     def get_variables(self):
         return self.__variables
 
-    def add_service_links(self, links_in):
+    def set_service_links(self, links_in):
         self.__logger.trace("Adding service links")
         if links_in is not None and isinstance(links_in, str):
             self.__logger.trace("Processing a string of service links")
@@ -108,8 +117,8 @@ class RancherConnection:
                 name, reference = link.split('=', 1)
                 self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
                 service_id = self.__get_service_id_from_link_reference(reference)
-                if service_id is not None:
-                    self.__service_links[name] = service_id
+                if service_id is not None and name is not None:
+                    self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
         elif links_in and (isinstance(links_in, tuple) or isinstance(links_in, list)):
             self.__logger.trace("Processing a tuple or list of services links")
             for link in links_in:
@@ -117,7 +126,7 @@ class RancherConnection:
                 self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
                 service_id = self.__get_service_id_from_link_reference(reference)
                 if service_id is not None:
-                    self.__service_links[name] = service_id
+                    self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
         else:
             self.__logger.error("Unrecognized type of service links. Ignoring them and moving on.")
 
@@ -141,11 +150,11 @@ class RancherConnection:
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.STACK_BASE),
             "Failed to create stack named '%s'." % stack_name,
-            '$.*[@.name is "%s"]' % stack_name,
+            '$.*[@.name is "%s"].id' % stack_name,
             new_stack
         )
         if response is not None:
-            self.__stack_id = response['id']
+            self.__stack_id = response
             return True
         else:
             return False
@@ -168,13 +177,16 @@ class RancherConnection:
     def create_service(self, new_image, service_name=None):
         if service_name is None:
             service_name = self.__service_name
+        if new_image is None:
+            self.__logger.error("In order to create service %s, an image must be specified." % service_name)
+            return False
         if self.service_exists(service_name):
             self.__logger.error("Service '%s' already exists. Skipping create." % service_name)
             return False
         new_service = {
             'name': service_name,
             'stackId': self.__stack_id,
-            'startOnCreate': True,
+            'startOnCreate': False,
             'launchConfig': {
                 'imageUuid': ("docker:%s" % new_image),
                 'labels': self.__labels,
@@ -187,12 +199,14 @@ class RancherConnection:
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.SERVICE_BASE),
             "Failed to create service named '%s'." % service_name,
-            '$.*[@.name is "%s"]' % service_name,
+            '$.*[@.name is "%s"].id' % service_name,
             new_service
         )
         if response is not None:
-            self.__stack_id = response['id']
-            return True
+            self.__service_id = response
+            self.__set_service_links()
+            self.activate_service()
+            return self.wait_for_state('active')
         else:
             return False
 
@@ -269,6 +283,24 @@ class RancherConnection:
         self.__logger.trace('Received upgrade response (cached)', json.dumps(response,
                                                                              sort_keys=True, indent=2))
 
+    def activate_service(self, service_id=None):
+        service_id = self.__get_actionable_service_id(service_id)
+        response = self.__managed_session(
+            HttpMethod.POST,
+            self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=activate',
+            "Error while activating service id '%s'" % service_id,
+            '$.*[@.id is "%s"]' % service_id
+        )
+
+    def deactivate_service(self, service_id=None):
+        service_id = self.__get_actionable_service_id(service_id)
+        response = self.__managed_session(
+            HttpMethod.POST,
+            self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=deactivate',
+            "Error while deactivating service id '%s'" % service_id,
+            '$.*[@.id is "%s"]' % service_id
+        )
+
     def rollback(self, service_id=None):
         self.__logger.info("Rolling back")
         service_id = self.__get_actionable_service_id(service_id)
@@ -280,9 +312,19 @@ class RancherConnection:
         else:
             return False
 
-    def __get_actionable_stack_id(self, stack_id=None):
+    def __set_service_links(self):
+        if len(self.__service_links['serviceLinks']) > 0:
+            response = self.__managed_session(HttpMethod.POST,
+                                              self.__get_url_frag(UrlFragType.SERVICE) + '/?action=setservicelinks',
+                                              "Error while attempting to apply service links to service",
+                                              json_payload=self.__service_links
+                                              )
+
+    def __get_actionable_stack_id(self, stack_id=None, stack_name=None):
         self.__logger.trace('Executing __get_actionable_stack_id....')
-        if stack_id is None:
+        if stack_id is None and stack_name is not None:
+            stack_id = self.__get_stack_id(stack_name)
+        elif stack_id is None:
             if self.__stack_id is None:
                 self.__stack_id = self.__get_stack_id()
             stack_id = self.__stack_id
@@ -351,11 +393,10 @@ class RancherConnection:
     # ======================================================================================================================
     # A function to retrieve and return a service ID based on a service reference in the service link argument
     # ======================================================================================================================
-    # todo: refactor to use managed_session
     def __get_service_id(self, stack_name=None, service_name=None):
         self.__logger.trace('Executing __get_service_id....')
         service_id = None
-        stack_id = self.__get_actionable_stack_id(stack_name)
+        stack_id = self.__get_actionable_stack_id(stack_name=stack_name)
         response = self.__managed_session(
             HttpMethod.GET,
             self.__get_url_frag(UrlFragType.SERVICE_BASE, stack_id),
@@ -366,29 +407,6 @@ class RancherConnection:
             return response
         else:
             return None
-
-        # if stack_id:
-        #     try:
-        #         r = self.__session.get("%s/projects/%s/environments/%s/services?limit=1000" % (
-        #             self.__api_endpoint,
-        #             self.__project_id,
-        #             stack_id
-        #         ))
-        #         r.raise_for_status()
-        #     except requests.exceptions.HTTPError:
-        #         self.__logger.error("Unable to fetch a list of services in stack '%s'. "
-        #                             "Does your API key have the right permissions?" % stack_name)
-        #         return service_id
-        #     else:
-        #         services = r.json()['data']
-        #
-        #     # Loop through all services and find the one that matches the command line argument
-        #     for s in services:
-        #         if s['name'].lower() == service_name:
-        #             service_id = s['id']
-        #             break
-        #
-        # return service_id
 
     # ======================================================================================================================
     # A function to retrieve and return a stack ID based on a stack name
@@ -462,30 +480,33 @@ class RancherConnection:
         except requests.exceptions.HTTPError as e:
             self.__logger.error(err_msg + ": \r\n\t %s" % format(e))
         else:
-            self.__logger.trace("Received response from %s (cached)" % url, json.dumps(http_response.json(),
-                                                                                         sort_keys=True, indent=2))
+            self.__logger.trace("Response cached", json.dumps(http_response.json(), sort_keys=True, indent=2))
             try:
                 tree = Tree(http_response.json())
                 self.__logger.debug("Query", object_path_query)
                 response = tree.execute(object_path_query)
-                self.__logger.trace(
-                    "Received query response (cached)", json.dumps(response, sort_keys=True, indent=2))
-                if len(response) < 1:
+                self.__logger.trace("Response cached", json.dumps(response, sort_keys=True, indent=2))
+                if response is not None and len(response) < 1:
                     response = None
             except TypeError as te:
                 self.__logger.error("TypeError: %s" % format(te))
+                self.__logger.trace_dump()
                 response = None
             except AttributeError as e:
                 self.__logger.error("AttributeError: %s" % format(e))
+                self.__logger.trace_dump()
                 response = None
             except StopIteration as e:
                 self.__logger.error("StopIteration: %s" % format(e))
+                self.__logger.trace_dump()
                 response = None
             except SyntaxError as e:
                 self.__logger.error("SyntaxError: %s" % format(e))
+                self.__logger.trace_dump()
                 response = None
             except Exception as ex:
                 self.__logger.error("Unhandled Exception: %s" % format(type(ex)))
+                self.__logger.trace_dump()
                 response = None
         finally:
             self.__session.close()
