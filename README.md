@@ -11,7 +11,10 @@ services as part of your CI workflow.
 ## Installation
 
 
-## Configuration
+## Configuration and Usage
+
+For usage details, refer to the [--help output](HELP.md).
+
 **RanchLab** will default as much of its configuration as possible from environment variables set by the GitLab 
 CI runner.
 
@@ -44,7 +47,7 @@ deploy:
 ### Basic Options
 In addition to the required variables, you will probably want to provide basic options when running **RanchLab**. These 
 include the target stack and service to upgrade, as well as the new or updated Docker image to use. These options 
-are briefly described below, but for a full list of available options see the [Help](#help) section below.
+are briefly described below, but for a full list of available options see the [Help](HELP.md) section below.
 
 #### Rancher Stack and Service
 By default, **RanchLab** will use the GitLab group and project name as the stack and service name. For example, running 
@@ -75,11 +78,7 @@ deploy:
 The default upgrade strategy is to upgrade containers one at time, waiting 2s between each one. It will start new 
 containers after shutting down existing ones, to avoid issues with multiple containers trying to bind to the same 
 port on a host. It will wait for the upgrade to complete in Rancher, then mark it as finished. The default upgrade 
-strategy can be overridden with various flags. Review the [Help](#help) contents for all options.
-
-## Usage
-
-For usage details, refer to the [--help output](HELP).
+strategy can be overridden with various flags. Review the [Help](HELP.md) contents for all options.
 
 ### GitLab CI Example
 
