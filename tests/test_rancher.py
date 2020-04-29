@@ -8,7 +8,7 @@ class RancherTests(unittest.TestCase):
 
     def test_labels_processing(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -30,7 +30,7 @@ class RancherTests(unittest.TestCase):
 
     def test_string_variables_processing(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -50,7 +50,7 @@ class RancherTests(unittest.TestCase):
 
     def test_tuple_variables_processing(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -70,7 +70,7 @@ class RancherTests(unittest.TestCase):
 
     def test_service_links_processing(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -85,7 +85,7 @@ class RancherTests(unittest.TestCase):
 
     def test_stack_exists(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -100,7 +100,7 @@ class RancherTests(unittest.TestCase):
 
     def test_stack_doesnt_exists(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -115,7 +115,7 @@ class RancherTests(unittest.TestCase):
 
     def test_create_stack(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -131,7 +131,7 @@ class RancherTests(unittest.TestCase):
 
     def test_service_exists(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -146,7 +146,7 @@ class RancherTests(unittest.TestCase):
 
     def test_service_state(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -161,7 +161,7 @@ class RancherTests(unittest.TestCase):
 
     def test_get_launchconfig(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),
@@ -176,7 +176,7 @@ class RancherTests(unittest.TestCase):
 
     def test_do_upgrade(self):
         import os
-        from lib import RancherConnection
+        from helpers import RancherConnection
         rancher = RancherConnection(
             'https://rancher.dev.cu.edu',
             os.environ.get('RANCHER_ACCESS_KEY'),

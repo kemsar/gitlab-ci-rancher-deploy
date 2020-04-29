@@ -1,10 +1,11 @@
 #!/usr/bin/env python
+
 import logging
 import click
 import sys
 
-from lib import Logger, LogLevel
-from lib import RancherConnection
+from .helpers import RancherConnection
+from .helpers import Logger
 
 try:
     from http.client import HTTPConnection  # py3

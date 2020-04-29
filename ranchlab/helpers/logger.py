@@ -2,7 +2,6 @@ import warnings
 
 import click
 import sys
-import os
 from enum import IntEnum
 from datetime import datetime
 

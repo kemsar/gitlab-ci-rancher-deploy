@@ -4,7 +4,7 @@ from cli_test_helpers import ArgvContext, EnvironContext
 from click.testing import CliRunner
 
 from ranchlab import cli
-from lib import Logger, LogLevel
+from helpers import Logger, LogLevel
 
 
 def test_all():

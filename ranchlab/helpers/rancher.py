@@ -1,7 +1,7 @@
 import requests
 from time import sleep
 
-from logger import Logger, LogLevel
+from .logger import Logger, LogLevel
 from enum import Enum, auto
 from sakstig import *
 import json
