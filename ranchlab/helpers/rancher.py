@@ -272,6 +272,7 @@ class RancherConnection:
     def do_upgrade(self, json_payload, service_id=None):
         self.__logger.trace('Executing do_upgrade....')
         service_id = self.__get_actionable_service_id(service_id)
+        self.__set_service_links(service_id)
         response = self.__managed_session(
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=upgrade',
@@ -313,10 +314,12 @@ class RancherConnection:
         else:
             return False
 
-    def __set_service_links(self):
+    def __set_service_links(self, service_id=None):
         if len(self.__service_links['serviceLinks']) > 0:
+            service_id = self.__get_actionable_service_id(service_id)
             response = self.__managed_session(HttpMethod.POST,
-                                              self.__get_url_frag(UrlFragType.SERVICE) + '/?action=setservicelinks',
+                                              self.__get_url_frag(UrlFragType.SERVICE, service_id=service_id)
+                                              + '/?action=setservicelinks',
                                               "Error while attempting to apply service links to service",
                                               json_payload=self.__service_links
                                               )

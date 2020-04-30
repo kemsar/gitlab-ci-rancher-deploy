@@ -216,7 +216,7 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
 
     # 6 -> Wait for the upgrade to finish
 
-    if not wait_for_finish and not rancher.get_service_links():
+    if not wait_for_finish:
         log.info("Upgrade triggered. Not waiting for finish.")
     else:
         log.info("Upgrade started, waiting for upgrade to complete...")
@@ -237,7 +237,7 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
                 log.fatal("The upgrade failed. Please investigate the cause and resolve "
                           "any issues before trying again.")
 
-        if not finish_on_success and not rancher.get_service_links():
+        if not finish_on_success:
             log.info("Service upgraded. Upgrade still needs to be manually finished.")
         else:
             log.info("Finishing upgrade...")
