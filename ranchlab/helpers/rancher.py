@@ -67,66 +67,79 @@ class RancherConnection:
         :param labels_in: A string of comma-delimited key=value pairs
         :return:
         """
-        self.__logger.trace('Adding labels...')
-        if labels_in is not None and isinstance(labels_in, str):
-            self.__logger.trace('Adding a string of labels')
-            self.__logger.trace(labels_in)
-            label_array = labels_in.split(',')
-            for label_pair in label_array:
-                label, value = label_pair.split('=', 1)
-                self.__logger.trace("Adding label '" + label + "' with value '" + value + "'.")
-                self.__labels[label] = value
-        elif labels_in and (isinstance(labels_in, tuple) or isinstance(labels_in, list)):
-            self.__logger.trace('adding labels from a tuple or list')
-            for label in labels_in:
-                name, value = label
-                self.__logger.trace("Adding label '" + name + "' with value '" + value + "'.")
-                self.__labels[name] = value
-        else:
-            self.__logger.error('Unknown type of labels provided. Ignoring them.')
+        try:
+            self.__logger.trace('Adding labels...')
+            if labels_in is not None and isinstance(labels_in, str):
+                self.__logger.trace('Adding a string of labels')
+                self.__logger.trace(labels_in)
+                label_array = labels_in.split(',')
+                for label_pair in label_array:
+                    label, value = label_pair.split('=', 1)
+                    self.__logger.trace("Adding label '" + label + "' with value '" + value + "'.")
+                    self.__labels[label] = value
+            elif labels_in and (isinstance(labels_in, tuple) or isinstance(labels_in, list)):
+                self.__logger.trace('adding labels from a tuple or list')
+                for label in labels_in:
+                    name, value = label
+                    self.__logger.trace("Adding label '" + name + "' with value '" + value + "'.")
+                    self.__labels[name] = value
+            else:
+                self.__logger.error('Unknown type of labels provided. Ignoring them.')
+        except Exception as e:
+            self.__logger.error("%s" % format(e))
 
     def get_labels(self):
         return self.__labels
 
     def set_variables(self, vars_in):
-        if vars_in is not None and isinstance(vars_in, str):
-            self.__logger.debug("Processing a string of variables")
-            self.__logger.trace(vars_in)
-            variables_as_array = vars_in.split('|')
-            for variable_item in variables_as_array:
-                key, value = variable_item.split('=', 1)
-                self.__variables[key] = value
-        elif vars_in and (isinstance(vars_in, tuple) or isinstance(vars_in, list)):
-            self.__logger.debug("Processing a tuple or list of variables")
-            for variable in vars_in:
-                name, value = variable
-                self.__logger.trace("Adding variable '" + name + "' with value '" + value + "'.")
-                self.__variables[name] = value
-        else:
-            self.__logger.error('Unknown type of variables provided. Ignoring them.')
+        try:
+            if vars_in is not None and isinstance(vars_in, str):
+                self.__logger.debug("Processing a string of variables")
+                self.__logger.trace(vars_in)
+                variables_as_array = vars_in.split('|')
+                for variable_item in variables_as_array:
+                    key, value = variable_item.split('=', 1)
+                    self.__variables[key] = value
+            elif vars_in and (isinstance(vars_in, tuple) or isinstance(vars_in, list)):
+                self.__logger.debug("Processing a tuple or list of variables")
+                for variable in vars_in:
+                    name, value = variable
+                    self.__logger.trace("Adding variable '" + name + "' with value '" + value + "'.")
+                    self.__variables[name] = value
+            else:
+                self.__logger.error('Unknown type of variables provided. Ignoring them.')
+        except Exception as e:
+            self.__logger.error("%s" % format(e))
 
     def get_variables(self):
         return self.__variables
 
     def set_service_links(self, links_in):
         self.__logger.trace("Adding service links")
-        if links_in is not None and isinstance(links_in, str):
+        if links_in and links_in is not None and isinstance(links_in, str):
             self.__logger.trace("Processing a string of service links")
             link_array = links_in.split(',')
-            for link in link_array:
-                name, reference = link.split('=', 1)
-                self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
-                service_id = self.__get_service_id_from_link_reference(reference)
-                if service_id is not None and name is not None:
-                    self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
+            if len(link_array) > 0:
+                for link in link_array:
+                    try:
+                        name, reference = link.split('=', 1)
+                        self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
+                        service_id = self.__get_service_id_from_link_reference(reference)
+                        if service_id is not None and name is not None:
+                            self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
+                    except Exception as e:
+                        self.__logger.error("%s" % format(e))
         elif links_in and (isinstance(links_in, tuple) or isinstance(links_in, list)):
             self.__logger.trace("Processing a tuple or list of services links")
             for link in links_in:
-                name, reference = link
-                self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
-                service_id = self.__get_service_id_from_link_reference(reference)
-                if service_id is not None:
-                    self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
+                try:
+                    name, reference = link
+                    self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
+                    service_id = self.__get_service_id_from_link_reference(reference)
+                    if service_id is not None:
+                        self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
+                except Exception as e:
+                    self.__logger.error("%s" % format(e))
         else:
             self.__logger.error("Unrecognized type of service links. Ignoring them and moving on.")
 
