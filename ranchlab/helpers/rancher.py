@@ -289,7 +289,7 @@ class RancherConnection:
         response = self.__managed_session(
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=upgrade',
-            "Error while upgrading service id '%s'" % service_id,
+            "Error while upgrading service id '%s' with payload: %s" % (service_id, json_payload),
             '$.*[@.id is "%s"]' % service_id,
             json_payload
         )
