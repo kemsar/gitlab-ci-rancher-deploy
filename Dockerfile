@@ -1,6 +1,6 @@
-FROM python:2.7-alpine
-ADD . /rancher-gitlab-deploy
-WORKDIR /rancher-gitlab-deploy
-RUN python /rancher-gitlab-deploy/setup.py install
-RUN ln -s /usr/local/bin/rancher-gitlab-deploy /usr/local/bin/upgrade
-CMD rancher-gitlab-deploy
+FROM python:3.8-alpine
+ADD . /gitlab-ci-rancher-deploy
+WORKDIR /gitlab-ci-rancher-deploy
+RUN python /gitlab-ci-rancher-deploy/setup.py install
+RUN ln -s /usr/local/bin/gitlab-ci-rancher-deploy /usr/local/bin/upgrade
+CMD gitlab-ci-rancher-deploy

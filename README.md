@@ -1,80 +1,163 @@
-# Rancher GitLab Deployment Tool
+# GitLab-CI Rancher Deploy
 
-**rancher-gitlab-deploy** is a tool for deploying containers built with GitLab CI onto your Rancher infrastructure.
+This project is a fork of Chris R.'s project, [rancher-gitlab-deploy](https://github.com/cdrx/rancher-gitlab-deploy). 
+While his project hasn't had any updates in a couple of years, many thanks to him (and the other 
+[contributors](https://github.com/cdrx/rancher-gitlab-deploy/graphs/contributors)) for laying the groundwork!
 
-It fits neatly into the `gitlab-ci.yml` workflow and requires minimal configuration. It will upgrade existing services as part of your CI workflow.
+**GitLab-CI Rancher Deploy** is a tool for deploying Docker images built with GitLab CI into your Rancher 
+infrastructure from your GitLab CI pipeline. It fits neatly into the GitLab CI/CD workflow and requires minimal 
+configuration. In addition to deploying new services, it will also upgrade existing services as part of your CI 
+workflow.
 
-Both GitLab's built in Docker registry and external Docker registries are supported.
+## Features
 
-`rancher-gitlab-deploy` will pick as much of its configuration up as possible from environment variables set by the GitLab CI runner.
+* Run either from local Python installation or from Docker container
+* Create new Rancher Stacks
+* Deploy new Rancher Services
+* Update existing Rancher Services
+* Compatible with Rancher API v1 and v2-beta
+* Add labels to services
+* Add environment labels to services
+* Add service links to services
+
+## Prerequisites
+
+Before using **GitLab-CI Rancher Deploy**, there are a couple of prereqs that must be taken care of...
+
+### Rancher Registry Access
+
+In order to use **GitLab-CI Rancher Deploy** from your GitLab CI/CD pipelines, Rancher needs permission to access your
+registry[^1]. 
+
+First, you need to create an access token that can be used from Rancher to authenticate to the registry. One way to do 
+that is to create a "Rancher" user in GitLab and create a Personal Access Token for that user with the "read_registry" 
+scope. Then give the "Rancher" user "Developer" access to any project that you want to deploy to Rancher from.
+
+The second step is to add the user to the desired Rancher environment. Login to the desired Rancher environment, select 
+"INFRASTRUCTURE" from the top menu-bar, and select "Registries". Then click on the "Add Registry" button, select 
+"Custom" from the available registry types and enter the GitLab registry URL and authentication information. Click 
+"Create" and you should be good to go!
+
+[^1]: This has *only* been tested with an on-prem GitLab registry. Outside of that, your mileage may vary.
+
+### Rancher API Keys
+
+Your Gitlab CI/CD pipeline needs to be able to authenticate to Rancher in order to perform its functions. To do that, it
+needs a set of API keys. You create your API keys in Rancher by logging in to your target environment and, on the top 
+menu bar, selecting "API > Keys".
+
+It's important to note that Rancher supports two kinds of API keys: Environment and Account. You can use either with 
+this tool, but **we recommend using Environment API keys**. If you *do* elect to use Account API keys and your account 
+has access to more than one (1) environment, you'll need to specify the name of the environment with the `--environment` 
+flag. For example, in your `.gitlab-ci.yml` file:
+
+```yaml
+my_deploy_job:
+  stage: deploy
+  script:
+    - upgrade --environment MY-ENV
+```
+
+It's not necessary to specify the environment if using an Environment API key.
 
 ## Installation
 
-I recommend you use the pre-built container:
+**GitLab-CI Rancher Deploy** can either be run by installing the Python utility natively in your custom GitLab Runner 
+or by building the Docker image and using that from your pipeline.
 
-https://hub.docker.com/r/cdrx/rancher-gitlab-deploy/
+### Using the Docker Image
 
-But you can install the command locally, with `pip`, if you prefer:
+Build the Docker image using the included [Dockerfile](Dockerfile). You can then use the image in your pipeline:
 
+```yaml
+my_deploy_job:
+    stage: deploy
+    image: my_registry/gitlab-ci-rancher-deploy
+    script:
+      - upgrade --environment my_rancher_environment ...
 ```
-pip install rancher-gitlab-deploy
+
+### Installing with Python
+
+If you are generating a custom Gitlab Runner, here's an example of adding **GitLab-CI Rancher Deploy** to your image:
+
+```dockerfile
+RUN apk --no-cache update && \
+    apk --no-cache add \
+        git \
+        ncurses \
+        python3 \
+        python3-dev && \
+    if [ ! -e /usr/bin/python ]; then ln -sf python3 /usr/bin/python ; fi && \
+    python3 -m ensurepip && \
+    rm -r /usr/lib/python*/ensurepip && \
+    pip3 install --no-cache --upgrade pip setuptools click requests colorama && \
+    if [ ! -e /usr/bin/pip ]; then ln -s pip3 /usr/bin/pip ; fi && \
+    rm -rf /var/cache/* && \
+    rm -rf /root/.cache/* && \
+    git clone https://github.com/kemsar/gitlab-ci-rancher-deploy.git && \
+    cd ./gitlab-ci-rancher-deploy && \
+    git checkout master && \
+    python ./setup.py install && \
 ```
 
-## Usage
+## Configuration and Usage
 
-You will need to create a set of API keys in Rancher and save them as secret variables in GitLab for your project.
+For usage details, you can refer to the [--help output](HELP.md).
 
-Three secret variables are required:
+Please note that **GitLab-CI Rancher Deploy** will pull as much of its configuration as possible from environment 
+variables, including both environment variables you set and those delivered by GitLab.
 
-`RANCHER_URL` (eg `https://rancher.example.com`)
+### Required Variables
+At the very least, **GitLab-CI Rancher Deploy** requires three (3) variables be available:
 
-`RANCHER_ACCESS_KEY`
+* `RANCHER_URL` - The URL of your Rancher instance (eg `https://rancher.example.com`).
+* `RANCHER_ACCESS_KEY` - A Rancher API Access Key (see [how to generate API keys](#rancher-api-keys) above)
+* `RANCHER_SECRET_KEY` - A Rancher API Secret Key (see [how to generate API keys](#rancher-api-keys) above)
 
-`RANCHER_SECRET_KEY`
+These variables can be set as either a) group- or project-level CI/CD secret variables, b) variables set in your CI/CD 
+file (.gitlab-ci.yml) or c) values passed directly in the script.
 
-Rancher supports two kind of API keys: environment and account. You can use either with this tool, but if your account key has access to more than one environment you'll need to specify the name of the environment with the --environment flag. This is so that the tool can upgrade find the service in the right place. For example, in your `gitlab-ci.yml`:
+### Basic Options
+In addition to the required variables, you will probably want to provide basic options when running 
+**GitLab-CI Rancher Deploy**. These include the target stack and service to upgrade, as well as the new or updated 
+Docker image to use. These options are briefly described below, but for a full list of available options see the 
+[Help](HELP.md) page or run the tool from the command line with the `--help` flag.
+
+#### Rancher Stack and Service
+By default, **GitLab-CI Rancher Deploy** will use the current project's GitLab group and project name as the stack and 
+service name, respectively. For example, running an upgrade with the default settings in the project 
+`http://gitlab.example.com/acme/webservice` will upgrade the service called `webservice` in the stack called `acme`.
+
+If the names of your stack and service don't match your GitLab project, you can override the defaults with the 
+`--stack` and `--service` flags:
 
 ```yaml
 deploy:
   stage: deploy
-  image: cdrx/rancher-gitlab-deploy
   script:
-    - upgrade --environment production
+    - upgrade --stack my-stack --service my-service
 ```
 
-`rancher-gitlab-deploy` will use the GitLab group and project name as the stack and service name by default. For example, the project:
-
-`http://gitlab.example.com/acme/webservice`
-
-will upgrade the service called `webservice` in the stack called `acme`.
-
-If the names of your services don't match your repos in GitLab 1:1, you can change the service that gets upgraded with the `--stack` and `--service` flags:
-
-```yaml
-deploy:
-  stage: deploy
-  image: cdrx/rancher-gitlab-deploy
-  script:
-    - upgrade --stack acmeinc --service website
-```
-
+#### Docker Image
 You can change the image (or :tag) used to deploy the upgraded containers with the `--new-image` option:
 
 ```yaml
 deploy:
   stage: deploy
-  image: cdrx/rancher-gitlab-deploy
   script:
     - upgrade --new-image registry.example.com/acme/widget:1.2
 ```
 
-You may use this with the `$CI_BUILD_TAG` environment variable that GitLab sets.
+#### Upgrade Strategy, etc.
+The default upgrade strategy is to upgrade containers one at time, waiting 2s between each one. It will start new 
+containers after shutting down existing ones, to avoid issues with multiple containers trying to bind to the same 
+port on a host. It will wait for the upgrade to complete in Rancher, then mark it as finished. The default upgrade 
+strategy can be overridden with various flags. Review the [Help](HELP.md) contents for all options.
 
-`rancher-gitlab-deploy`'s default upgrade strategy is to upgrade containers one at time, waiting 2s between each one. It will start new containers after shutting down existing ones, to avoid issues with multiple containers trying to bind to the same port on a host. It will wait for the upgrade to complete in Rancher, then mark it as finished. The upgrade strategy can be adjusted with the flags in `--help` (see below).
+## Examples
 
-## GitLab CI Example
-
-Complete gitlab-ci.yml:
+Using all defaults:
 
 ```yaml
 image: docker:latest
@@ -94,7 +177,10 @@ build:
 
 deploy:
   stage: deploy
-  image: cdrx/rancher-gitlab-deploy
+  variables:
+    RANCHER_URL: https://rancher.example.com
+    RANCHER_ACCESS_KEY: sdfg5tgsdf34wrd4q234fwe5y5wewrtg54we
+    RANCHER_API_KEY: w45erfaedf4323awe55uyh6hts34
   script:
     - upgrade
 ```
@@ -104,118 +190,29 @@ A more complex example:
 ```yaml
 deploy:
   stage: deploy
-  image: cdrx/rancher-gitlab-deploy
+  variables:
+    RANCHER_URL: https://rancher.example.com
+    RANCHER_ACCESS_KEY: sdfg5tgsdf34wrd4q234fwe5y5wewrtg54we
+    RANCHER_API_KEY: w45erfaedf4323awe55uyh6hts34
   script:
     - upgrade --environment production --stack acme --service web --new-image alpine:3.4 --no-finish-upgrade
 ```
 
-## Help
+## Troubleshooting: Limitations and Common Errors
 
-```
-$ rancher-gitlab-deploy --help
+### 422 Client Error: Unprocessable Entity
 
-Usage: rancher-gitlab-deploy [OPTIONS]
+One possible reason for this error is discussed in [this issue report](https://github.com/rancher/rancher/issues/8129). 
+In short, if you're trying to switch between global and fixed scale (either direction), you'll see this error. Check to 
+see if you're setting the label `io.rancher.scheduler.global` to either `true` or `false` on an existing service.
 
-  Performs an in service upgrade of the service specified on the command
-  line
+### Error response from daemon: pull access denied for registry...repository does not exist or may require 'docker login'
 
-Options:
-  --rancher-url TEXT              The URL for your Rancher server, eg:
-                                  http://rancher:8000  [required]
-  --rancher-key TEXT              The environment or account API key
-                                  [required]
-  --rancher-secret TEXT           The secret for the access API key
-                                  [required]
-  --environment TEXT              The name of the environment to add the host
-                                  into (only needed if you are using an
-                                  account API key instead of an environment
-                                  API key)
-  --stack TEXT                    The name of the stack in Rancher (defaults
-                                  to the name of the group in GitLab)
-                                  [required]
-  --sidekicks/--no-sidekicks      Upgrade service sidekicks at the same time?
-                                  Defaults to not upgrading sidekicks
-  --new-sidekick-image NAME IMAGE If specified, replace the named sidekick image
-                                  (and :tag) with this one during the upgrade.
-                                  This flag can be used more than once.
-  --service TEXT                  The name of the service in Rancher to
-                                  upgrade (defaults to the name of the service
-                                  in GitLab)  [required]
-  --start-before-stopping / --no-start-before-stopping
-                                  Should Rancher start new containers before
-                                  stopping the old ones?
-  --batch-size INTEGER            Number of containers to upgrade at once
-  --batch-interval INTEGER        Number of seconds to wait between upgrade
-                                  batches
-  --upgrade-timeout INTEGER       How long to wait, in seconds, for the
-                                  upgrade to finish before exiting. To skip
-                                  the wait, pass the --no-wait-for-upgrade-to-
-                                  finish option.
-  --wait-for-upgrade-to-finish / --no-wait-for-upgrade-to-finish
-                                  Wait for Rancher to finish the upgrade
-                                  before this tool exits
-  --rollback-on-error/--no-rollback-on-error
-                                  Rollback the upgrade if an error occured.
-                                  The rollback will be performed only
-                                  if the option --wait-for-upgrade-to-finish is passed
-  --new-image TEXT                If specified, replace the image (and :tag)
-                                  with this one during the upgrade
-  --finish-upgrade / --no-finish-upgrade
-                                  Mark the upgrade as finished after it
-                                  completes
-  --ssl-verify / --no-ssl-verify  Whether we should skip certificate checks
-                                  or not when connecting to the Rancher API.
-                                  Default behaviour is to check cert validity.
-  --create / --no-create          Will create the Rancher stack
-                                  and service, if they are missed
-                                  (needs --new-image option)
-  --labels                        Will add Rancher labels to the service being
-                                  created by passing a comma separated list in the format of
-                                  '<label1>=<value>,<label2>=<value>'.
-  --label KEY VALUE               Alternative way of adding a Rancher label to the
-                                  service.
-                                  You can pass this option multiple times to create
-                                  multiple labels.
-  --variables                     Will add environment variables to the service being
-                                  created by passing a pipe-delimited list.
-  --variable KEY VALUE            Alternative way of adding environment variables to the
-                                  service.
-                                  You can pass this option multiple times to create
-                                  multiple environment variables.
-  --service-links                 Will set service links to the service being
-                                  created by passing a comma separated list.
-  --service-link KEY VALUE        Alternative way of setting service links to the
-                                  service.
-                                  You can pass this option multiple times to set
-                                  multiple service links.
-  --help                          Show this message and exit.
-
-```
+This error is caused by a mis-configured or missing registry definition in Rancher. Review how to configure 
+[Rancher Registry Access](#rancher-registry-access) and check to see if you have yours configured correctly.
 
 ## History
-
-#### [1.6] - 2018-09-09
-Added the --rollback-on-error option, thanks to @TZK- for the PR
-Added the --label, --variables, --variable options, thankls to @tsteenkamp for the PR
-
-#### [1.5] - 2017-11-25
-Fixed UnicodeError bug with authentication, thank you to @evilmind for the fix
-
-#### [1.4] - 2017-07-18
-Fixed some bug to do with error and sidekick handling and made `--no-start-before-stopping` the default behaviour
-
-#### [1.3] - 2017-03-16
-Added the --new-sidekick-image flag to change sidekick images while upgrading, thank you @kariae for the PR
-
-#### [1.2] - 2017-01-03
-Added the --sidekicks flag to upgrade sidekicks at the same time, thank you @kiesiu for the PR
-
-#### [1.1] - 2016-09-29
-Fixed a bug that caused a crash when using --environment, thank you @mvriel for the PR
-
-#### [1.0] - 2016-09-14
-First release, works.
+See the [Changelog](CHANGELOG.md).
 
 ## License
-
-MIT
+This project is licensed under the terms of the [MIT license](LICENSE).
