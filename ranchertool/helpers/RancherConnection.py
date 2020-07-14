@@ -1,7 +1,7 @@
 import requests
 from time import sleep
 
-from .logger import Logger, LogLevel
+from .Logger import Logger, LogLevel
 from enum import Enum, auto
 from sakstig import *
 import json
@@ -47,6 +47,7 @@ class RancherConnection:
         self.__variables = {}
         self.__service_links = {'serviceLinks': []}
         self.__api_endpoint = self.__url + '/' + self.__api_version
+        self.__project_id = None
         self.__project_id = self.__get_project_id()
         self.__key = None
         self.__secret = None
@@ -94,20 +95,20 @@ class RancherConnection:
     def set_variables(self, vars_in):
         try:
             if vars_in is not None and isinstance(vars_in, str):
-                self.__logger.debug("Processing a string of variables")
+                self.__logger.trace("Processing a string of variables")
                 self.__logger.trace(vars_in)
                 variables_as_array = vars_in.split('|')
                 for variable_item in variables_as_array:
                     key, value = variable_item.split('=', 1)
                     self.__variables[key] = value
             elif vars_in and (isinstance(vars_in, tuple) or isinstance(vars_in, list)):
-                self.__logger.debug("Processing a tuple or list of variables")
+                self.__logger.trace("Processing a tuple or list of variables")
                 for variable in vars_in:
                     name, value = variable
                     self.__logger.trace("Adding variable '" + name + "' with value '" + value + "'.")
                     self.__variables[name] = value
             else:
-                self.__logger.error('Unknown type of variables provided. Ignoring them.')
+                self.__logger.warn('Unknown type of variables provided. Ignoring them.')
         except Exception as e:
             self.__logger.error("%s" % format(e))
 
@@ -293,6 +294,9 @@ class RancherConnection:
             '$.*[@.id is "%s"]' % service_id,
             json_payload
         )
+        if isinstance(response, requests.exceptions.HTTPError):
+            self.__logger.fatal("Upgrade attempt received fatal error response: %s" % format(response))
+
         self.__logger.trace('Received upgrade response (cached)', json.dumps(response,
                                                                              sort_keys=True, indent=2))
 
@@ -313,6 +317,15 @@ class RancherConnection:
             HttpMethod.POST,
             self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=deactivate',
             "Error while deactivating service id '%s'" % service_id,
+            '$.*[@.id is "%s"]' % service_id
+        )
+
+    def remove_service(self, service_id=None):
+        service_id = self.__get_actionable_service_id(service_id)
+        response = self.__managed_session(
+            HttpMethod.POST,
+            self.__get_url_frag(UrlFragType.SERVICE, None, service_id) + '/?action=remove',
+            "Error while deleting/removing service id '%s'" % service_id,
             '$.*[@.id is "%s"]' % service_id
         )
 
@@ -360,44 +373,44 @@ class RancherConnection:
     # ==================================================================================================================
     # A function to retrieve and return the environment ID
     # ==================================================================================================================
-    # todo: refactor to use managed_session
     def __get_project_id(self):
         self.__logger.trace("Getting project ID for environment %s...." %
                             str(self.__project_name or 'based on security token'))
-        projects = {}
-        try:
-            r = self.__session.get("%s/projects?limit=1000" % self.__api_endpoint)
-            r.raise_for_status()
-        except requests.exceptions.HTTPError:
-            self.__logger.fatal("Unable to connect to Rancher at %s. Check that you are using the correct URL, "
-                                "API version, API key and/or API secret." % self.__api_endpoint)
-            self.__session.close()
-        else:
-            projects = r.json()['data']
-            self.__session.close()
 
-        environment_id = None
+        project_id = None
+
+        # IF THE NAME ISN'T GIVE, BUT THERE ARE MULTIPLE PROJECTS RETURNED, THAT MEANS WE WEREN'T
+        # GIVEN AN ENVIRONMENT TOKEN. THROW AN ERROR IN THIS CASE
         if self.__project_name is None:
-            self.__logger.trace('No environment provided. Will assume we are using an environment security token....')
-            environment_id = projects[0]['id']
-            self.__project_name = projects[0]['name']
-            self.__logger.debug('Environment Name', self.__project_name)
-        else:
-            for e in projects:
-                if e['id'].lower() == self.__project_name.lower() \
-                        or e['name'].lower() == self.__project_name.lower():
-                    environment_id = e['id']
-                    self.__project_name = e['name']
 
-        if not environment_id:
-            if self.__project_name:
-                self.__logger.fatal("The '%s' environment doesn't exist in Rancher, or your API "
-                                    "credentials don't have access to it" % self.__project_name)
+            project_count = self.__managed_session(
+                HttpMethod.GET,
+                self.__get_url_frag(UrlFragType.PROJECT_BASE),
+                "Failed to get count of projects. This is a fatal error.",
+                'count($.data)'
+            )
+
+            if project_count != 1:
+                self.__logger.fatal("An error occurred while trying to get the project ID")
             else:
-                self.__logger.fatal("No environment in Rancher matches your request")
+                project_id = self.__managed_session(
+                    HttpMethod.GET,
+                    self.__get_url_frag(UrlFragType.PROJECT_BASE),
+                    "Failed to get project ID. This is a fatal error.",
+                    '$.data[0].id'
+                )
+
+        # IF WE HAVE A PROJECT NAME, WHEN CAN JUST USE THAT TO GET AN ID, NO MATTER HOW MANY PROJECTS
+        # ARE RETURNED
         else:
-            self.__logger.debug("Project ID", environment_id)
-            return environment_id
+            project_id = self.__managed_session(
+                HttpMethod.GET,
+                self.__get_url_frag(UrlFragType.PROJECT_BASE),
+                "Failed to get project ID. This is a fatal error.",
+                '$.data[@.name is "%s"].id' % str(self.__project_name)
+            )
+
+        return project_id
 
     # ==================================================================================================================
     # A function to retrieve and return a service ID based on a service reference in the service link argument
@@ -463,7 +476,7 @@ class RancherConnection:
 
         self.__logger.trace('Getting url fragment %s for api version %s' % (url_type.name, self.__api_version))
         projects = self.__api_endpoint + '/projects'
-        project = projects + '/' + self.__project_id
+        project = projects + '/%s' % str(self.__project_id or "")
         stacks = project + stacks_url_fragment
         stack = stacks + '/%s' % str(stack_id or self.__stack_id)
         services = stack + '/services'
@@ -479,13 +492,16 @@ class RancherConnection:
         }
         return frags.get(url_type)
 
+    # ======================================================================================================================
+    # This function manages the HTTP session and all communications
+    # ======================================================================================================================
     def __managed_session(self, method: HttpMethod, url: str, err_msg: str, object_path_query='$.*', json_payload=None):
         response = None
         http_response = None
         try:
-            self.__logger.debug('Managed Session Url', url)
+            self.__logger.trace('Managed Session Url: ' + url)
             if method is HttpMethod.GET:
-                self.__logger.trace('Executing a GET')
+                self.__logger.trace('Executing a GET', url)
                 http_response = self.__session.get(url)
             elif method is HttpMethod.POST:
                 self.__logger.trace('Executing a POST (payload cached)',
@@ -496,14 +512,17 @@ class RancherConnection:
             http_response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             self.__logger.error(err_msg + ": \r\n\t %s" % format(e))
+            response = requests.exceptions.HTTPError(e)
         else:
-            self.__logger.trace("Response cached", json.dumps(http_response.json(), sort_keys=True, indent=2))
+            self.__logger.trace("JSON response cached", json.dumps(http_response.json(), sort_keys=True, indent=2))
             try:
                 tree = Tree(http_response.json())
-                self.__logger.debug("Query", object_path_query)
+                self.__logger.trace("Query", object_path_query)
                 response = tree.execute(object_path_query)
                 self.__logger.trace("Response cached", json.dumps(response, sort_keys=True, indent=2))
-                if response is not None and len(response) < 1:
+                if response is not None and isinstance(response, int):
+                    self.__logger.trace("Response is an integer")
+                elif response is not None and len(response) < 1:
                     response = None
             except TypeError as te:
                 self.__logger.error("TypeError: %s" % format(te))

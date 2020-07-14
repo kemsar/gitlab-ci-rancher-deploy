@@ -90,4 +90,4 @@ ENV/
 
 # IDEA stuff
 .idea
-!/ranchlab/helpers/
+!/ranchertool/helpers/

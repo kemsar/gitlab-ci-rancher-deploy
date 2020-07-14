@@ -87,7 +87,7 @@ except ImportError:
               type=(str, str))
 @click.option('--log-level', envvar='LOG_LEVEL',
               type=click.Choice(['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL', 'SILENT'], case_sensitive=False),
-              help="Determines how much information is written to the console. RanchLab will first check to see if "
+              help="Determines how much information is written to the console. ranchertool will first check to see if "
                    "this argument is provided. If not, it will check for a 'LOG_LEVEL' environment variable. If the "
                    "'LOG_LEVEL' environment variable isn't set, it will default to INFO.")
 @click.option('--debug-http/--no-debug-http', default=False,

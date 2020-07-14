@@ -37,7 +37,7 @@ class Logger:
         else:
             self.level = log_level
         self.name = name
-        self.__trace_cache = {}
+        self.__trace_cache = {datetime.now().strftime(datetime_string_format): "Cache initialized"}
         if filter_deprecated:
             warnings.filterwarnings("ignore", category=DeprecationWarning)
         click.echo("")
@@ -46,7 +46,7 @@ class Logger:
         if self.level >= LogLevel.TRACE:
             timestamp = datetime.now().strftime(datetime_string_format)
             if cache is not None:
-                self.__trace_cache[timestamp] = cache
+                self.__trace_cache[timestamp] = message + ": " + cache
             click.echo(click.style(timestamp +
                                    ' [TRACE] ' + self.name + ' ' + message, fg='white', dim=True))
 
@@ -75,12 +75,14 @@ class Logger:
         if self.level >= LogLevel.FATAL:
             click.echo(click.style(datetime.now().strftime(datetime_string_format) +
                                    ' [FATAL] ' + self.name + ' ' + message, fg='bright_white', bg='red', bold=True))
+        self.trace_dump()
         sys.exit('Fatal Error: %s' % message)
 
     def trace_dump(self):
         if self.level >= LogLevel.TRACE:
-            for line in self.__trace_cache:
-                key, value = line
+            for key, value in self.__trace_cache.items():
                 click.echo(click.style(key +
-                                       ' [TRACE_CACHE_DUMP] ' + self.name + ' ' + value, fg='white', dim=True))
+                                       ' [TRACE-DUMP] ' + self.name + ' ' + value, fg='white', dim=True))
             self.__trace_cache = {}
+        else:
+            print('Wrong logging level. Skipping dump.')

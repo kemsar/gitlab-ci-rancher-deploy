@@ -1,7 +1,7 @@
 ```
-Usage: ranchlab [OPTIONS]
+Usage: ranchertool [OPTIONS]
 
-  Performs an in service upgrade of the service specified on the command
+  Performs an operation on a Rancher service specified on the command
   line
 
 Options:
@@ -119,7 +119,7 @@ Options:
 
   --log-level [TRACE|DEBUG|INFO|WARN|ERROR|FATAL|SILENT]
                                   Determines how much information is written
-                                  to the console. RanchLab will first check to
+                                  to the console. ranchertool will first check to
                                   see if this argument is provided. If not, it
                                   will check for a 'LOG_LEVEL' environment
                                   variable. If the 'LOG_LEVEL' environment

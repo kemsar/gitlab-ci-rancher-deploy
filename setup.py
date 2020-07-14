@@ -1,12 +1,12 @@
 from setuptools import setup
 
-setup(name='ranchlab',
+setup(name='gitlab-ci-rancher-deploy',
       version='2.0',
-      description='Command line tool to ease updating services in Rancher from your GitLab CI/CD pipeline',
-      url='https://github.com/kemsar/rancher-gitlab-deploy',
+      description='Tool to ease updating services in Rancher from your GitLab CI/CD pipeline, or anywhere.',
+      url='https://github.com/kemsar/gitlab-ci-rancher-deploy',
       author='kemsar',
       license='MIT',
-      packages=['ranchlab', 'ranchlab.helpers'],
+      packages=['ranchertool', 'ranchertool.helpers'],
       zip_safe=False,
       install_requires=[
           'wheel',
@@ -21,6 +21,7 @@ setup(name='ranchlab',
       ],
       entry_points={
           'console_scripts': [
-              'ranchlab = ranchlab.cli:main']
+              'ranchertool = ranchertool.cli:main'
+          ]
       }
       )

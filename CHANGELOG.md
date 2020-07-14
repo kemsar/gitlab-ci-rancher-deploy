@@ -3,24 +3,25 @@
 
 #### [2.0] - 2020-04-22
 
-PLEASE NOTE: Version 2.0 is a major refactor from [Chris R.'s project](https://github.com/cdrx/rancher-gitlab-deploy) 
+PLEASE NOTE: Version 2.0 is a major refactor from [Chris R.'s project](https://github.com/cdrx/rancher-gitlab-deploy)
 and therefore will require some changes to your `.gitlab-ci.yml` file(s).
 {: .alert .alert-gitlab-orange}
 
-* 💥 Breaking changes! Not backward-compatible.
-* 💄 Renamed package to "ranchlab"...cause it's shorter 😁
-* ✅ Added some testing capabilities for developers 
+* 💥 **Breaking changes! Not backward-compatible.**
+* 💄 Renamed package to "ranchertool"...cause it's shorter and more clever 😁
+* ✅ Added some testing capabilities for developers
 * 🐛 Fixed handling of service links
 * ✨ Enabled usage of more complex environment variables
 * ✨ Enabled selection of API version (Currently only v1 and v2-beta are supported. ☸️ Kubernetes next?)
+* Added additional actions on services (i.e. remove, deactivate, etc.)
 
 ##### Disclaimer
-I haven't taken the time to thoroughly re-test everything yet beyond creating and updating stacks and services and 
+I haven't taken the time to thoroughly re-test everything yet beyond creating and updating stacks and services and
 adding labels, variables and service links. Hopefully I haven't broken any of the core functionality!
 
 #### [1.6] - 2018-09-09
 Added the --rollback-on-error option, thanks to @TZK- for the PR
-Added the --label, --variables, --variable options, thankls to @tsteenkamp for the PR
+Added the --label, --variables, --variable options, thanks to @tsteenkamp for the PR
 
 #### [1.5] - 2017-11-25
 Fixed UnicodeError bug with authentication, thank you to @evilmind for the fix
