@@ -1,19 +1,27 @@
 from setuptools import setup
 
-setup(name='rancher-gitlab-deploy',
-    version='1.5',
-    description='Command line tool to ease updating services in Rancher from your GitLab CI pipeline',
-    url='https://github.com/kemsar/rancher-gitlab-deploy',
-    author='kemsar',
-    license='MIT',
-    packages=['rancher_gitlab_deploy'],
-    zip_safe=False,
-    install_requires=[
-        'click',
-        'requests',
-        'colorama'
-    ],
-    entry_points = {
-        'console_scripts': ['rancher-gitlab-deploy=rancher_gitlab_deploy.cli:main'],
-    }
-)
+setup(name='gitlab-ci-rancher-deploy',
+      version='2.0',
+      description='Tool to ease updating services in Rancher from your GitLab CI/CD pipeline, or anywhere.',
+      url='https://github.com/kemsar/gitlab-ci-rancher-deploy',
+      author='kemsar',
+      license='MIT',
+      packages=['ranchertool', 'ranchertool.helpers'],
+      zip_safe=False,
+      install_requires=[
+          'wheel',
+          'click',
+          'requests',
+          'colorama',
+          'sakstig'
+      ],
+      tests_require=[
+          'pytest',
+          'cli_test_helpers'
+      ],
+      entry_points={
+          'console_scripts': [
+              'ranchertool = ranchertool.cli:main'
+          ]
+      }
+      )
