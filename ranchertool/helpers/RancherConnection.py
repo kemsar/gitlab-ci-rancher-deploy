@@ -217,9 +217,12 @@ class RancherConnection:
             new_service
         )
         if response is not None:
-            self.__service_id = response
-            self.__set_service_links()
-            return self.activate_service() and self.wait_for_state('active')
+            if isinstance(response, requests.exceptions.HTTPError):
+                self.__logger.fatal("A fatal error occurred. Unable to create service. ")
+            else:
+                self.__service_id = response
+                self.__set_service_links()
+                return self.activate_service() and self.wait_for_state('active')
         else:
             return False
 
@@ -511,7 +514,12 @@ class RancherConnection:
                 self.__logger.error("Unknown HTTP method.")
             http_response.raise_for_status()
         except requests.exceptions.HTTPError as e:
-            self.__logger.error(err_msg + ": \r\n\t %s" % format(e))
+            self.__logger.error(
+                "%s: "
+                "\r\n\tMsg: %s"
+                "\r\n\tURL: %s"
+                "\r\n\tJSON Payload:\r\n\t%s" % (err_msg, url, json.dumps(json_payload, sort_keys=True, indent=2),
+                                                 format(e)))
             response = requests.exceptions.HTTPError(e)
         else:
             self.__logger.trace("JSON response cached", json.dumps(http_response.json(), sort_keys=True, indent=2))
