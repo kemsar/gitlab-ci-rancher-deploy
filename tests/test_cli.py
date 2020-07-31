@@ -10,25 +10,20 @@ def test_dev():
     logger = Logger(name='test_cli', log_level=LogLevel.DEBUG)
     runner = CliRunner()
     with EnvironContext(CI_PROJECT_NAMESPACE='odin',
-                        CI_PROJECT_NAME='odin-portal',
-                        LOG_LEVEL='DEBUG',
+                        CI_PROJECT_NAME='odin-api',
+                        LOG_LEVEL='TRACE',
                         RANCHER_ENV='ODIN_DEV',
-                        RANCHER_STACK='odin',
-                        RANCHER_SERVICE='odin-portal'):
+                        RANCHER_STACK='odin-sandbox',
+                        # RANCHER_SERVICE='odin-portal',
+                        IMAGE='registry.gitlab.dev.cu.edu/odin/odin-api:22'):
         result = runner.invoke(cli.main,
-                               '--stack odin '
-                               '--service odin-portal '
+                               '--stack odin-sandbox '
                                '--create-stack '
                                '--create-service '
-                               '--image registry.gitlab.dev.cu.edu/odin/odin-portal:1-ALPHA '
+                               '--image registry.gitlab.dev.cu.edu/odin/odin-api:22 '
                                '--service-links "es-client=elasticsearch/es-client,kafka=kafka/kafka" '
-                               '--variables "SPRING_PROFILES_ACTIVE=dev|jasypt.encryptor.password=${'
-                               'JKEY}|SENTRY_DSN=${SENTRY_DSN}|SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT}" '
-                               '--labels "app=$CI_PROJECT_NAME,owner=$GITLAB_USER_EMAIL,commit=$CI_COMMIT_SHORT_SHA,'
-                               'io.rancher.container.pull_image=always,'
-                               'io.rancher.container.hostname_override=container_name,'
-                               'io.rancher.scheduler.affinity:host_label_ne=az=3,io.rancher.scheduler.global=true,'
-                               'logspout=true"')
+                               '--variables "SPRING_PROFILES_ACTIVE=dev|jasypt.encryptor.password=${KEY}" '
+                               '--labels "io.rancher.container.hostname_override=container_name,app=odin-api,owner=kevin.sarsen@cu.edu,commit=b6ee1ef2,traefik.enable=true,traefik.http.routers.feature--2-row-level-security.rule=Host(`https://feature--2-row-level-security.sbx.odin.dev.cu.edu`),traefik.http.routers.feature--2-row-level-security.service=feature--2-row-level-security,traefik.http.services.feature--2-row-level-security.loadbalancer.server.port=8081,traefik.domain=odin.dev.cu.edu,io.rancher.container.pull_image=always"')
         logger.info('OUTPUT:\r\n\r\n%s' % result.output)
 
 # def test_all():
