@@ -12,18 +12,29 @@ try:
 except ImportError:
     from httplib import HTTPConnection  # py2
 
+CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
-@click.command()
+
+@click.group()
+@click.pass_context
+# <editor-fold desc="click options">
+@click.option('--log-level', envvar='LOG_LEVEL', default="INFO",
+              type=click.Choice(['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL', 'SILENT'], case_sensitive=False),
+              help="Determines how much information is written to the console. Ranchertool will first check to see if "
+                   "this argument is provided. If not, it will check for a 'LOG_LEVEL' environment variable. If the "
+                   "'LOG_LEVEL' environment variable isn't set, it will use the default. DEFAULT: INFO")
+@click.option('--debug-http/--no-debug-http', default=False,
+              help="Sets whether or not to enable debug mode for HTTP requests. DEFAULT: --no-debug-http")
 @click.option('--rancher-url', envvar='RANCHER_URL', required=True,
               help='The URL for your Rancher server.')
 @click.option('--rancher-key', envvar='RANCHER_ACCESS_KEY', required=True,
               help="The environment or account API Access Key.")
 @click.option('--rancher-secret', envvar='RANCHER_SECRET_KEY', required=True,
               help="The secret for the API Access Key.")
-@click.option('--stack', 'rancher_stack_name', envvar='CI_PROJECT_NAMESPACE', default=None, required=True,
+@click.option('--stack', 'rancher_stack_name', envvar='RANCHER_STACK', default=None, required=True,
               help="The name of the target stack in Rancher. Defaults to the name of the GitLab project group as "
                    "defined in the CI_PROJECT_NAMESPACE environment variable.")
-@click.option('--service', 'rancher_service_name', envvar='CI_PROJECT_NAME', default=None, required=True,
+@click.option('--service', 'rancher_service_name', envvar='RANCHER_SERVICE', default=None, required=True,
               help="The name of the service in Rancher to upgrade/create. Defaults to the name of the GitLab project "
                    "as defined in the CI_PROJECT_NAME environment variable.")
 @click.option('--api-version', 'rancher_api_version', default='v2-beta', required=False,
@@ -33,6 +44,107 @@ except ImportError:
 @click.option('--environment', 'rancher_project_name', default=None,
               help="The name of the Rancher environment to operate in. In the Rancher API, this is called 'project'." +
                    "This is only required if you are using an account API key instead of an environment API key.")
+@click.option('--timeout', default=5 * 60,
+              help="Sets how many seconds to wait for Rancher to finish processing before assuming something went "
+                   "wrong. Defaults to 300 seconds (5 mins). This setting is ignored if --no-wait is used.")
+@click.option('--ssl-verify/--no-ssl-verify', default=True,
+              help="Sets whether or not to perform certificate checks. Defaults to --ssl-verify. Use this to allow "
+                   "connecting to a HTTPS Rancher server using an self-signed certificate")
+# </editor-fold>
+def cli(ctx, log_level, debug_http, rancher_url, rancher_key, rancher_secret, rancher_stack_name, rancher_service_name,
+        rancher_api_version, rancher_project_name, timeout, ssl_verify):
+    ctx.ensure_object(dict)
+    logger = Logger(log_level, 'MAIN')
+    if debug_http:
+        logger.debug('Enabling HTTP debug mode')
+        debug_requests_on()
+    logger.debug('Logging level set to %s' % log_level)
+
+    # split url to protocol and host
+    if "://" not in rancher_url:
+        logger.fatal("The Rancher URL doesn't look right. Please verify that it's a valid URL (i.e. "
+                     "https://my.rancher.com).")
+    logger.trace("Rancher URL: %s" % rancher_url)
+
+    proto, host = rancher_url.split("://")
+
+    rancher = RancherConnection(
+        "%s://%s" % (proto, host),
+        rancher_key,
+        rancher_secret,
+        rancher_project_name,
+        rancher_stack_name,
+        rancher_service_name,
+        ssl_verify,
+        rancher_api_version,
+        logger.level,
+        timeout
+    )
+    logger.info("Setting LOG_LEVEL in context...")
+    ctx.obj['LOG_LEVEL'] = log_level
+    logger.info("Setting RANCHER_CONNECTION in context...")
+    ctx.obj['RANCHER_CONNECTION'] = rancher
+
+
+@cli.command(name="delete")
+@click.pass_context
+def _delete(ctx):
+    """
+    Deletes the specified service.
+
+    \f
+    :param ctx:
+    :return:
+    """
+    log = Logger(ctx.obj['LOG_LEVEL'], 'DELETE')
+    log.info("Deleting service...")
+    rancher = ctx.obj['RANCHER_CONNECTION']
+    if rancher.service_exists():
+        log.debug("Removing service %s" % rancher.get_service_name())
+        rancher.remove_service()
+    else:
+        log.info("Unable to remove service %s. Are you sure it exists?" % rancher.get_service_name())
+
+
+@cli.command(name="stop")
+@click.pass_context
+def _stop(ctx):
+    """
+    Stops the specified service.
+
+    \f
+    :param ctx:
+    :return:
+    """
+    log = Logger(ctx.obj['LOG_LEVEL'], 'STOP')
+    log.info("Stopping service...")
+    rancher = ctx.obj['RANCHER_CONNECTION']
+    if rancher.service_exists() and rancher.get_service_state() == 'active':
+        log.debug("Stopping service %s" % rancher.get_service_name())
+        rancher.deactivate_service()
+    else:
+        log.info("Unable to stop service %s. This is due to either the service wasn't found or it isn't "
+                 "currently active." % rancher.get_service_name())
+
+
+@cli.command()
+@click.pass_context
+def restart(ctx):
+    """
+    Deletes the specified service.
+
+    \f
+    :param ctx:
+    :return:
+    """
+    logger = ctx.obj['LOGGER']
+    rancher = ctx.obj['RANCHER_CONNECTION']
+    logger.info("Restarting")
+
+
+@cli.command(name='deploy')
+@click.pass_context
+# <editor-fold desc="click options">
 @click.option('--start-before-stopping/--no-start-before-stopping', default=False,
               help="Controls whether or not new containers should be started before the old ones are stopped. Defaults "
                    "to --no-start-before-stopping.")
@@ -53,7 +165,7 @@ except ImportError:
               help="If specified, replaces the current service's image (and :tag) with the one specified.")
 @click.option('--finish/--no-finish', 'finish_on_success', default=True,
               help="Sets whether or not to finish an upgrade when it completes. Defaults to --finish.")
-@click.option('--sidekicks/--no-sidekicks', default=False,
+@click.option('--upgrade-sidekicks/--no-upgrade-sidekicks', default=False,
               help="Sets whether or not to upgrade service sidekicks at the same time. Defaults to --no-sidekicks.")
 @click.option('--new-sidekick-image', default=None, multiple=True,
               help="If specified, replaces the existing sidekick image (and :tag) with the specified one. This can be "
@@ -68,75 +180,47 @@ except ImportError:
                    "to --no-create-service.")
 @click.option('--labels', default=None,
               help="If specified, labels will be added to the service. Labels to be added should be provided as a "
-                   "comma-delimited list of <label-name>=<label-value> pairs.")
-@click.option('--label', default=None, multiple=True,
-              help="Another way to add labels to a service. This one can be defined multiple times. "
-                   "Example: '--label label1 value1 --label label2 value2'", type=(str, str))
+                   "pipe-delimited list of <label-name>=<label-value> pairs.")
+@click.option('--secrets', default=None,
+              help="If specified, environment secrets will be added to the service. Secrets to be added should be "
+                   "provided as a "
+                   "pipe-delimited list of <environment-secret>=<container-secret> pairs.")
 @click.option('--variables', default=None,
               help="If specified, adds the passed list of environment variables to the service. The list of variables "
                    "should be a pipe-delimited (|) list of <key>=<value> pairs. "
                    "Example: '--variables var1=val1|var2=val2|var3=val3'.")
-@click.option('--variable', default=None, multiple=True,
-              help="Another way to add environment variables to a service. See --label for syntax.", type=(str, str))
 @click.option('--service-links', default=None,
               help="If specified, adds the provided list of service links to the service. See --labels for syntax. "
-                   "Example: '--service-links <local-name1>=<target-name1>,<local-name2>=<target-name2>'. Target "
+                   "Example: '--service-links <local-name1>=<target-name1>|<local-name2>=<target-name2>'. Target "
                    "service name should be in the format of '<stack>/<service>'.")
-@click.option('--service-link', default=None, multiple=True,
-              help="Another way to add service links to a service. See --label for syntax.",
-              type=(str, str))
-@click.option('--log-level', envvar='LOG_LEVEL',
-              type=click.Choice(['TRACE', 'DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL', 'SILENT'], case_sensitive=False),
-              help="Determines how much information is written to the console. ranchertool will first check to see if "
-                   "this argument is provided. If not, it will check for a 'LOG_LEVEL' environment variable. If the "
-                   "'LOG_LEVEL' environment variable isn't set, it will default to INFO.")
-@click.option('--debug-http/--no-debug-http', default=False,
-              help="Sets whether or not to enable debug mode for HTTP requests. Defaults to --no-debug-http.")
-@click.option('--ssl-verify/--no-ssl-verify', default=True,
-              help="Sets whether or not to perform certificate checks. Defaults to --ssl-verify. Use this to allow "
-                   "connecting to a HTTPS Rancher server using an self-signed certificate")
-def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_project_name, rancher_stack_name,
-         rancher_service_name, new_service_image, batch_size, batch_interval,
-         start_before_stopping, timeout, wait_for_finish, rollback_on_error, finish_on_success,
-         sidekicks, new_sidekick_image, create_stack, create_service, labels, label, variables, variable,
-         service_links, service_link, log_level, debug_http, ssl_verify):
-    """
-    Performs an in service upgrade of the service specified on the command line
-    """
-
-    log = Logger(log_level, 'Main')
-    log.trace('Log level set to ' + log.level.name)
-
-    if debug_http:
-        debug_requests_on()
-
-    # split url to protocol and host
-    if "://" not in rancher_url:
-        log.fatal("The Rancher URL doesn't look right. Please verify that it's a valid URL (i.e. "
-                  "https://my.rancher.com).")
-
-    proto, host = rancher_url.split("://")
-
-    rancher = RancherConnection(
-        "%s://%s" % (proto, host),
-        rancher_key,
-        rancher_secret,
-        rancher_project_name,
-        rancher_stack_name,
-        rancher_service_name,
-        ssl_verify,
-        rancher_api_version,
-        log.level,
-        timeout
-    )
+# </editor-fold>
+def _deploy(ctx,
+            start_before_stopping,
+            batch_size,
+            batch_interval,
+            timeout,
+            wait_for_finish,
+            rollback_on_error,
+            new_service_image,
+            finish_on_success,
+            upgrade_sidekicks,
+            new_sidekick_image,
+            create_stack,
+            create_service,
+            labels,
+            secrets,
+            variables,
+            service_links
+            ):
+    log = Logger(ctx.obj['LOG_LEVEL'], 'DEPLOY')
+    log.info("Deploying image...")
+    rancher = ctx.obj['RANCHER_CONNECTION']
 
     # Check for labels and environment variables to set
     rancher.set_labels(labels)
-    rancher.set_labels(label)
     rancher.set_variables(variables)
-    rancher.set_variables(variable)
     rancher.set_service_links(service_links)
-    rancher.set_service_links(service_link)
+    rancher.set_secrets(secrets)
 
     # 1 -> Find the environment id in Rancher (aka "project")
 
@@ -187,13 +271,16 @@ def main(rancher_url, rancher_key, rancher_secret, rancher_api_version, rancher_
     upgrade['inServiceStrategy']['launchConfig'] = rancher.get_launch_config()
 
     if rancher.get_labels():
-        upgrade['inServiceStrategy']['launchConfig']['labels'].update(rancher.get_labels())
+        upgrade['inServiceStrategy']['launchConfig']['labels'] = (rancher.get_labels())
 
     if rancher.get_variables():
-        upgrade['inServiceStrategy']['launchConfig']['environment'].update(rancher.get_variables())
+        upgrade['inServiceStrategy']['launchConfig']['environment'] = (rancher.get_variables())
+
+    if rancher.get_secrets():
+        upgrade['inServiceStrategy']['launchConfig']['secrets'] = (rancher.get_secrets())
 
     # new_sidekick_image parameter needs secondaryLaunchConfigs loaded
-    if sidekicks or new_sidekick_image:
+    if upgrade_sidekicks or new_sidekick_image:
         # copy over existing sidekicks config
         upgrade['inServiceStrategy']['secondaryLaunchConfigs'] = rancher.get_launch_config(True)
 
@@ -322,3 +409,4 @@ def debug_requests_on():
     requests_log = logging.getLogger("requests.packages.urllib3")
     requests_log.setLevel(logging.DEBUG)
     requests_log.propagate = True
+

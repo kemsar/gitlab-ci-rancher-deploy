@@ -14,11 +14,13 @@ class UrlFragType(Enum):
     STACK = auto()
     SERVICE_BASE = auto()
     SERVICE = auto()
+    ENV_SECRETS = auto()
 
 
 class HttpMethod(Enum):
     GET = auto()
     POST = auto()
+    DELETE = auto()
 
 
 class RancherConnection:
@@ -44,6 +46,7 @@ class RancherConnection:
         self.__session.verify = verify_ssl
         self.__session.auth = (api_key, api_secret)
         self.__labels = {}
+        self.__secrets = []  # empty list
         self.__variables = {}
         self.__service_links = {'serviceLinks': []}
         self.__api_endpoint = self.__url + '/' + self.__api_version
@@ -73,7 +76,7 @@ class RancherConnection:
             if labels_in is not None and isinstance(labels_in, str):
                 self.__logger.trace('Adding a string of labels')
                 self.__logger.trace(labels_in)
-                label_array = labels_in.split(',')
+                label_array = labels_in.split('|')
                 for label_pair in label_array:
                     label, value = label_pair.split('=', 1)
                     self.__logger.trace("Adding label '" + label + "' with value '" + value + "'.")
@@ -91,6 +94,54 @@ class RancherConnection:
 
     def get_labels(self):
         return self.__labels
+
+    def set_secrets(self, secrets_in):
+        """
+        Process the secrets arguments
+        :param secrets_in: A string of pipe-delimited key=value pairs
+        :return:
+        """
+        try:
+            self.__logger.trace('Adding secrets...')
+            if secrets_in is not None and isinstance(secrets_in, str):
+                self.__logger.trace('Adding a string of secrets')
+                self.__logger.trace(secrets_in)
+                t_array = secrets_in.split('|')
+                for t_pair in t_array:
+                    e_secret, c_secret = t_pair.split('=', 1)
+                    new_secret = {
+                        'type': "secretReference",
+                        'gid': "0",
+                        'mode': "444",
+                        'name': c_secret,
+                        'secretId': self.__get_secret_id(e_secret),
+                        'uid': "0"
+                    }
+                    self.__logger.trace("Adding environment secret '" + e_secret + "' as container secret '" + c_secret
+                                        + "'.")
+                    self.__secrets.append(new_secret)
+            elif secrets_in and (isinstance(secrets_in, tuple) or isinstance(secrets_in, list)):
+                self.__logger.trace('adding secrets from a tuple or list')
+                for secret_pair in secrets_in:
+                    e_secret, c_secret = secret_pair
+                    new_secret = {
+                        'type': "secretReference",
+                        'gid': "0",
+                        'mode': "444",
+                        'name': c_secret,
+                        'secretId': self.__get_secret_id(e_secret),
+                        'uid': "0"
+                    }
+                    self.__logger.trace("Adding environment secret '" + e_secret + "' as container secret '" + c_secret
+                                        + "'.")
+                    self.__secrets.append(new_secret)
+            else:
+                self.__logger.error('Unknown type of secrets provided. Ignoring them.')
+        except Exception as e:
+            self.__logger.error("%s" % format(e))
+
+    def get_secrets(self):
+        return self.__secrets
 
     def set_variables(self, vars_in):
         try:
@@ -119,15 +170,20 @@ class RancherConnection:
         self.__logger.trace("Adding service links")
         if links_in and links_in is not None and isinstance(links_in, str):
             self.__logger.trace("Processing a string of service links")
-            link_array = links_in.split(',')
+            # should be a pipe-delimited list of service links
+            link_array = links_in.split('|')
             if len(link_array) > 0:
                 for link in link_array:
                     try:
+                        # format is <local name>=<service name>
                         name, reference = link.split('=', 1)
                         self.__logger.trace("Adding link named '" + name + "' linking to service '" + reference + "'.")
                         service_id = self.__get_service_id_from_link_reference(reference)
                         if service_id is not None and name is not None:
                             self.__service_links['serviceLinks'].append({'name': name, 'serviceId': service_id})
+                        else:
+                            self.__logger.fatal("Requested service link (%s) is not available. Please correct the "
+                                                "reference and try again." % link)
                     except Exception as e:
                         self.__logger.error("%s" % format(e))
         elif links_in and (isinstance(links_in, tuple) or isinstance(links_in, list)):
@@ -227,15 +283,19 @@ class RancherConnection:
             return False
 
     def get_service_state(self, service_id=None):
+        self.__logger.debug("Getting service state...")
         service_id = self.__get_actionable_service_id(service_id)
+        self.__logger.trace("Getting service state for service ID %s" % service_id)
         response = self.__managed_session(
             HttpMethod.GET,
             self.__get_url_frag(UrlFragType.SERVICE_BASE),
             "Failed to determine if service '%s' exists.",
             '$.data[@.id is "%s"].state' % service_id)
         if response is not None:
+            self.__logger.trace("Service state is %s" % response)
             return response
         else:
+            self.__logger.warn("Unable to determine service state")
             return None
 
     def wait_for_state(self, state, service_id=None):
@@ -315,6 +375,7 @@ class RancherConnection:
         return response is not None
 
     def deactivate_service(self, service_id=None):
+        self.__logger.trace('Deactivating service...')
         service_id = self.__get_actionable_service_id(service_id)
         response = self.__managed_session(
             HttpMethod.POST,
@@ -436,7 +497,23 @@ class RancherConnection:
             "Failed to get ID for service '%s'" % str(service_name or self.__service_name),
             '$.data[@.name is "%s"].id' % str(service_name or self.__service_name))
         if response is not None:
-            self.__logger.debug("Service ID", response)
+            self.__logger.debug("Service ID", str(response).strip())
+            return response
+        else:
+            return None
+
+    # ======================================================================================================================
+    # A function to retrieve and return an environment secret ID based on a secret name
+    # ======================================================================================================================
+    def __get_secret_id(self, environment_secret_name):
+        self.__logger.trace('Executing __get_secret_id....')
+        response = self.__managed_session(
+            HttpMethod.GET,
+            self.__get_url_frag(UrlFragType.ENV_SECRETS),
+            "Failed to access environment secrets for environment '%s'" % str(self.__project_name),
+            '$.data[@.name is "%s"].id' % str(environment_secret_name))
+        if response is not None:
+            self.__logger.debug("Secret ID", response)
             return response
         else:
             return None
@@ -445,15 +522,17 @@ class RancherConnection:
     # A function to retrieve and return a stack ID based on a stack name
     # ======================================================================================================================
     def __get_stack_id(self, stack_name=None):
-        self.__logger.trace('Executing __get_stack_id....')
+        self.__logger.debug('Executing __get_stack_id....')
         response = self.__managed_session(
             HttpMethod.GET,
             self.__get_url_frag(UrlFragType.STACK_BASE),
             "Failed to get ID for stack '%s'" % str(stack_name or self.__stack_name),
             '$.data[@.name is "%s"].id' % str(stack_name or self.__stack_name))
         if response is not None:
+            self.__logger.trace('Found stack ID %s' % response)
             return response
         else:
+            self.__logger.warn('No stack ID found. Returning None')
             return None
 
     def __get_url_frag(self, url_type: UrlFragType, stack_id=None, service_id=None):
@@ -480,6 +559,7 @@ class RancherConnection:
         self.__logger.trace('Getting url fragment %s for api version %s' % (url_type.name, self.__api_version))
         projects = self.__api_endpoint + '/projects'
         project = projects + '/%s' % str(self.__project_id or "")
+        project_secrets = project + '/secrets'
         stacks = project + stacks_url_fragment
         stack = stacks + '/%s' % str(stack_id or self.__stack_id)
         services = stack + '/services'
@@ -491,7 +571,8 @@ class RancherConnection:
             UrlFragType.STACK_BASE: stacks,
             UrlFragType.STACK: stack,
             UrlFragType.SERVICE_BASE: services,
-            UrlFragType.SERVICE: service
+            UrlFragType.SERVICE: service,
+            UrlFragType.ENV_SECRETS: project_secrets
         }
         return frags.get(url_type)
 

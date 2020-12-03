@@ -1,7 +1,8 @@
 import sys
 
-from .cli import main
+from .cli import cli
+
 sys.path.append('.')
 
 if __name__ == "__main__":
-    main.main()
+    cli(obj={})

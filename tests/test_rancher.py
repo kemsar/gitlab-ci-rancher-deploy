@@ -1,5 +1,5 @@
 import unittest
-from logger import Logger, LogLevel
+from helpers.Logger import Logger, LogLevel
 
 logger = Logger(LogLevel.DEBUG, "unittest-rancher")
 

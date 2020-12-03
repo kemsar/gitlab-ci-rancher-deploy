@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='gitlab-ci-rancher-deploy',
-      version='2.0',
+      version='2.1',
       description='Tool to ease updating services in Rancher from your GitLab CI/CD pipeline, or anywhere.',
       url='https://github.com/kemsar/gitlab-ci-rancher-deploy',
       author='kemsar',
@@ -21,7 +21,7 @@ setup(name='gitlab-ci-rancher-deploy',
       ],
       entry_points={
           'console_scripts': [
-              'ranchertool = ranchertool.cli:main'
+              'ranchertool = ranchertool.cli:cli'
           ]
       }
       )

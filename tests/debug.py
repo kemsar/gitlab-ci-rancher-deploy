@@ -1,4 +1,4 @@
-from ranchertool.cli import main
+from ranchertool.cli import cli
 
 if __name__ == '__main__':
-    main.main()
+    cli(obj={})

@@ -50,10 +50,11 @@ class Logger:
             click.echo(click.style(timestamp +
                                    ' [TRACE] ' + self.name + ' ' + message, fg='white', dim=True))
 
+# title.rjust(25) = right justify at position 25
     def debug(self, title, content=''):
         if self.level >= LogLevel.DEBUG:
             click.echo(click.style(datetime.now().strftime(datetime_string_format) +
-                                   ' [DEBUG] ' + self.name + ' ' + title.rjust(25) + ':  ' + content,
+                                   ' [DEBUG] ' + self.name + ' ' + title + ':  ' + content,
                                    fg='white', bg='blue'))
 
     def info(self, message):

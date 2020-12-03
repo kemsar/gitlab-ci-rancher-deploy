@@ -13,74 +13,68 @@ def msg_output(logger):
 class LoggerTestCase(unittest.TestCase):
 
     def test_logger(self):
-        from logger import Logger
-        logger = Logger('deug')
+        from helpers.Logger import Logger, LogLevel
+        # from logger import Logger
+        logger = Logger('debug')
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_trace(self):
         print('============= TRACE =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.TRACE)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_debug(self):
         print('============= DEBUG =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.DEBUG)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_info(self):
         print('============= INFO =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.INFO)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_warn(self):
         print('============= WARN =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.WARN)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_error(self):
         print('============= ERROR =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.ERROR)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_fatal(self):
         print('============= FATAL =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.FATAL)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
     def test_logger_silent(self):
         print('============= SILENT =============')
-        from logger import Logger
-        from logger import LogLevel
+        from helpers.Logger import Logger, LogLevel
         logger = Logger(LogLevel.SILENT)
         with self.assertRaises(SystemExit) as cm:
             msg_output(logger)
-        self.assertEqual(cm.exception.code, 1)
+        self.assertNotEqual(cm.exception.code, 0)
 
 
 if __name__ == '__main__':
